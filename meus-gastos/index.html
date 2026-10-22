@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Meus Gastos</title>
+
+  <!-- ===== PWA: o que faz o site virar "app" ===== -->
+  <!-- O manifest descreve o app: nome, ícones, cor, abrir em tela cheia -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#115e59">
+  <!-- O iPhone usa este ícone na Tela de Início (180x180, sem transparência) -->
+  <link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
+  <!-- Abre sem a barra do Safari quando instalado -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Gastos">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" href="icones/icone-192.png">
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<!-- A classe do body controla o que aparece: "carregando", "deslogado" ou "logado" -->
+<body class="carregando">
+
+  <!-- ======================= LOGIN ======================= -->
+  <div id="area-login" class="area-login">
+    <div class="cartao-login">
+      <img src="icones/icone-192.png" alt="" width="64" height="64" class="logo">
+      <h1>Meus Gastos</h1>
+      <p class="subtitulo">Entre para ver seus gastos em qualquer aparelho.</p>
+
+      <form id="form-login" novalidate>
+        <label>
+          E-mail
+          <input id="login-email" type="email" autocomplete="email" inputmode="email" required>
+        </label>
+        <label>
+          Senha
+          <!-- autocomplete ajuda o iPhone a sugerir e guardar a senha no Chaves -->
+          <input id="login-senha" type="password" autocomplete="current-password" minlength="6" required>
+        </label>
+
+        <p id="login-mensagem" class="mensagem" role="status"></p>
+
+        <button type="submit" id="botao-entrar" class="botao-principal">Entrar</button>
+        <button type="button" id="botao-criar-conta" class="botao-secundario">Criar conta</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================= APP ======================= -->
+  <div id="area-app">
+    <header class="topo">
+      <div>
+        <h1>Meus Gastos</h1>
+        <p class="topo-total">Total do mês: <strong id="total-mes">R$ 0,00</strong></p>
+      </div>
+      <button type="button" id="botao-sair" class="botao-sair">Sair</button>
+    </header>
+
+    <!-- Avisos gerais (erro de conexão, sucesso ao importar etc.) -->
+    <div id="aviso" class="aviso" role="status" hidden></div>
+
+    <main>
+      <!-- ---------- TELA: NOVO GASTO ---------- -->
+      <section id="tela-novo" class="tela ativa" aria-labelledby="titulo-novo">
+        <h2 id="titulo-novo">Novo gasto</h2>
+
+        <form id="form-gasto" class="cartao" novalidate>
+          <label>
+            Valor (R$)
+            <input id="campo-valor" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+          </label>
+
+          <label>
+            Descrição
+            <input id="campo-descricao" type="text" placeholder="Ex.: Posto Shell" maxlength="80" required>
+          </label>
+
+          <label>
+            Categoria
+            <select id="campo-categoria" required></select>
+          </label>
+
+          <div class="linha">
+            <label>
+              Data
+              <input id="campo-data" type="date" required>
+            </label>
+            <label>
+              Pagamento
+              <select id="campo-pagamento">
+                <option value="pix">Pix</option>
+                <option value="debito">Débito</option>
+                <option value="credito">Crédito</option>
+                <option value="dinheiro">Dinheiro</option>
+                <option value="vale_refeicao">Vale-refeição</option>
+              </select>
+            </label>
+          </div>
+
+          <p id="erro-form" class="mensagem erro" role="alert"></p>
+
+          <button type="submit" id="botao-salvar" class="botao-principal">Adicionar gasto</button>
+          <button type="button" id="botao-cancelar" class="botao-secundario" hidden>Cancelar edição</button>
+        </form>
+      </section>
+
+      <!-- ---------- TELA: LISTA ---------- -->
+      <section id="tela-lista" class="tela" aria-labelledby="titulo-lista">
+        <h2 id="titulo-lista">Gastos</h2>
+
+        <!-- Só aparece se houver gastos da Etapa 1 salvos neste aparelho -->
+        <div id="caixa-importar" class="cartao destaque" hidden>
+          <p id="texto-importar"></p>
+          <button type="button" id="botao-importar" class="botao-principal">Enviar para a nuvem</button>
+        </div>
+
+        <div class="filtros cartao">
+          <label>
+            Mês
+            <input id="filtro-mes" type="month">
+          </label>
+          <label>
+            Categoria
+            <select id="filtro-categoria">
+              <option value="">Todas</option>
+            </select>
+          </label>
+        </div>
+
+        <p class="resumo-filtro">Total filtrado: <strong id="total-filtrado">R$ 0,00</strong></p>
+
+        <ul id="lista-gastos" class="lista"></ul>
+        <p id="lista-vazia" class="vazio" hidden>Nenhum gasto encontrado.</p>
+      </section>
+
+      <!-- ---------- TELA: METAS (GASTOS PROGRAMADOS) ---------- -->
+      <section id="tela-metas" class="tela" aria-labelledby="titulo-metas">
+        <h2 id="titulo-metas">Gastos programados</h2>
+
+        <p class="resumo-filtro">Guardar este mês: <strong id="total-guardar-mes">R$ 0,00</strong></p>
+
+        <!-- <details> já abre e fecha sozinho, sem JavaScript -->
+        <details id="caixa-nova-meta" class="cartao">
+          <summary>➕ Nova meta</summary>
+          <form id="form-meta" novalidate>
+            <label>
+              O que vai pagar?
+              <input id="meta-descricao" type="text" placeholder="Ex.: Rematrícula" maxlength="80" required>
+            </label>
+            <div class="linha">
+              <label>
+                Valor total (R$)
+                <input id="meta-valor" type="text" inputmode="decimal" placeholder="0,00" required>
+              </label>
+              <label>
+                Vence em
+                <input id="meta-vencimento" type="date" required>
+              </label>
+            </div>
+            <label class="opcao">
+              <input id="meta-incluir-mes" type="checkbox">
+              Também guardar no mês do vencimento
+            </label>
+            <p id="erro-meta" class="mensagem erro" role="alert"></p>
+            <button type="submit" class="botao-principal">Criar meta</button>
+          </form>
+        </details>
+
+        <ul id="lista-metas" class="lista"></ul>
+        <p id="metas-vazia" class="vazio" hidden>Nenhuma meta ainda. Que tal a próxima conta grande?</p>
+      </section>
+    </main>
+
+    <nav class="navegacao">
+      <button type="button" data-tela="tela-novo" class="ativo">➕ Novo</button>
+      <button type="button" data-tela="tela-lista">📋 Lista</button>
+      <button type="button" data-tela="tela-metas">🎯 Metas</button>
+    </nav>
+  </div>
+
+  <!-- ===== Moldes (o JS copia e preenche) ===== -->
+  <template id="molde-gasto">
+    <li class="item">
+      <span class="item-icone"></span>
+      <div class="item-info">
+        <span class="item-descricao"></span>
+        <span class="item-detalhes"></span>
+      </div>
+      <div class="item-direita">
+        <span class="item-valor"></span>
+        <div class="item-acoes">
+          <button type="button" class="acao-editar">Editar</button>
+          <button type="button" class="acao-excluir">Excluir</button>
+        </div>
+      </div>
+    </li>
+  </template>
+
+  <template id="molde-meta">
+    <li class="meta cartao">
+      <div class="meta-topo">
+        <span class="meta-descricao"></span>
+        <span class="meta-vencimento"></span>
+      </div>
+      <!-- role/aria-* fazem leitores de tela entenderem a barra -->
+      <div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+        <div class="barra-preenchida"></div>
+      </div>
+      <p class="meta-valores"></p>
+      <p class="meta-plano"></p>
+      <p class="meta-alerta" hidden></p>
+      <div class="meta-acoes">
+        <button type="button" class="acao-guardei botao-principal">Guardei</button>
+        <button type="button" class="acao-excluir-meta">Excluir</button>
+      </div>
+    </li>
+  </template>
+
+  <!-- ===== Scripts (a ordem importa) ===== -->
+  <!-- Biblioteca oficial do Supabase. "@2" = sempre a última versão 2.x,
+       que recebe correções sem quebrar o código. -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/metas.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
