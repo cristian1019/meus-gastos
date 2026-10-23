@@ -57,7 +57,15 @@ body.logado #area-app { display: block; }
 body.logado {
   /* espaço para a barra inferior não cobrir o conteúdo */
   padding-bottom: calc(var(--altura-nav) + env(safe-area-inset-bottom));
+  /* A página sempre ocupa a tela inteira, mesmo com pouco conteúdo.
+     No app instalado do iPhone, página mais curta que a tela faz a
+     barra de baixo "flutuar" e deixa uma faixa vazia embaixo. */
+  min-height: 100vh;  /* plano B para navegadores antigos */
+  min-height: 100dvh; /* altura real da tela no iPhone */
 }
+/* Fundo da "tela" atrás da página, caso alguma sobra apareça */
+html { background: var(--cor-fundo); }
+
 /* Enquanto verifica o login, mostra só um "carregando" */
 body.carregando::after {
   content: "Carregando…";
@@ -373,3 +381,23 @@ label.botao-foto.desativado { opacity: 0.5; pointer-events: none; }
   to   { background: var(--cor-fundo); }
 }
 .preenchido-ia { animation: destaque-ia 1.5s ease-out; }
+
+/* Correção para o Safari do iPhone: campos de data e mês têm uma
+   largura mínima própria e ignoram o width: 100%, invadindo o campo
+   do lado. "appearance: none" tira o visual nativo e faz o campo
+   obedecer ao CSS (o calendário continua abrindo ao tocar). */
+input[type="date"],
+input[type="month"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  height: 44px;
+  text-align: left;
+}
+/* O Safari centraliza o texto da data por dentro; alinha à esquerda */
+input::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
