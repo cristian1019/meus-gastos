@@ -84,3 +84,4 @@ Antes, saiba de duas coisas:
 - A Vercel costuma acompanhar a troca de nome sozinha. Depois de renomear, faça um commit qualquer e confira se o deploy aparece na Vercel.
 - O **endereço do app não muda**: ele vem do nome do projeto na **Vercel**, não do GitHub.
 - No VS Code, o Git avisa se precisar atualizar o endereço do repositório; o GitHub redireciona o nome antigo por um tempo.
+teste
