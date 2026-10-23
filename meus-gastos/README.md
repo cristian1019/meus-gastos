@@ -2,9 +2,9 @@
 
 App de controle de gastos pessoais, instalável no iPhone como PWA. Projeto de estudo e portfólio.
 
-**Etapa atual: 2 (nuvem).** Login, gastos salvos no Supabase, gastos programados básicos, instalável no iPhone.
+**Etapa atual: 3 (IA).** Digite "posto 150" ou fotografe o cupom, e a IA preenche o gasto para você conferir.
 
-👉 Para colocar no ar, siga o **[GUIA-ETAPA2.md](GUIA-ETAPA2.md)**.
+👉 Guias: **[Etapa 2 — colocar no ar](GUIA-ETAPA2.md)** · **[Etapa 3 — ligar a IA](GUIA-ETAPA3.md)**
 
 ## Estrutura
 
@@ -15,13 +15,18 @@ meus-gastos/
 ├── sw.js                 → service worker: faz o app abrir mesmo sem internet
 ├── css/style.css         → aparência (claro/escuro, pensado para iPhone)
 ├── icones/               → ícones do app em vários tamanhos
-├── sql/01_tabelas.sql    → tabelas e regras de segurança do banco
+├── sql/
+│   ├── 01_tabelas.sql    → tabelas e regras de segurança do banco
+│   └── 02_limite_ia.sql  → contador de usos da IA por dia
+├── supabase/functions/ler-gasto/index.ts
+│                         → servidor da IA (roda no Supabase, guarda a chave)
 └── js/
     ├── config.js   → endereço e chave pública do SEU Supabase
     ├── utils.js    → dinheiro, datas, categorias e o cálculo das metas
-    ├── storage.js  → única parte que fala com o banco
+    ├── storage.js  → única parte que fala com o banco (e com a função da IA)
     ├── auth.js     → entrar, criar conta, sair
     ├── metas.js    → tela de gastos programados
+    ├── ia.js       → caixa "Preencher" e foto do cupom
     └── app.js      → o "maestro": liga tudo
 ```
 
@@ -74,7 +79,45 @@ Com internet, sempre pega a versão nova do app. Sem internet, usa a última có
 ### Migração da Etapa 1
 Se houver gastos antigos no navegador, a tela Lista oferece **Enviar para a nuvem**. A cópia local é renomeada, não apagada, por segurança.
 
-## Próxima etapa (3): IA
-- Digitar "posto 150" e a IA preencher categoria e valor
-- Foto do cupom
-- Chave da IA numa Supabase Edge Function (nunca no app)
+## Decisões da Etapa 3
+
+### Por que um servidor (Edge Function) no meio?
+Se o app chamasse o Gemini direto, a chave da API teria que estar no `config.js`, ou seja, pública no GitHub e no navegador. Qualquer um poderia usar sua cota. A Edge Function roda no Supabase, guarda a chave como **segredo** e só atende quem está logado.
+
+```
+iPhone ──(token de login)──▶ Edge Function ──(chave secreta)──▶ Gemini
+                               │
+                               ├─ confere o login
+                               ├─ conta +1 no limite diário (banco)
+                               └─ confere a resposta da IA
+```
+
+### A IA interpreta, o código decide
+O Gemini devolve um JSON num **formato obrigatório** (JSON Schema). Mesmo assim, a função **confere tudo** antes de responder:
+- valor negativo, zero ou absurdo → vira "sem valor";
+- categoria fora da lista → `outros`;
+- data inexistente (30/02) ou no futuro → hoje;
+- forma de pagamento desconhecida → mantém a que estava no app.
+
+E o valor em reais vira centavos **no código** (`Math.round(valor * 100)`), não na IA.
+
+### Você sempre confirma
+A IA só **preenche o formulário**. Nada é salvo até você tocar em "Adicionar gasto". Se ela errar, você corrige antes.
+
+### Limite diário de 30 usos, contado pelo banco
+- A tabela `uso_ia` guarda quantos pedidos cada pessoa fez em cada dia (horário de Brasília).
+- Ninguém consegue zerar o próprio contador: não existe policy de insert/update. Só a função `registrar_uso_ia()` mexe nele, e ela só soma 1.
+- O uso é contado **antes** de chamar a IA. Tentativas que dão erro também contam; senão, um erro repetido viraria um jeito de furar o limite.
+- Pedidos mal formados (texto vazio, foto grande demais) são recusados **antes** de contar.
+
+### Foto reduzida no próprio celular
+A foto do iPhone (~4000×3000, vários MB) é redesenhada num `<canvas>` com no máximo 1600 px e salva como JPEG. No teste, uma imagem de 3000×4000 virou 1200×1600 com 19 KB. Isso deixa o envio rápido no 4G, gasta menos cota e ainda converte o HEIC do iPhone. A foto **não é guardada** em lugar nenhum.
+
+### Modelo
+`gemini-3.5-flash-lite`: um dos modelos que o Google recomenda para projetos novos, lê imagens e tem cota grátis. Para trocar, mude a constante `MODELO` no `index.ts`.
+
+## Próxima etapa (4): Relatórios
+- Gráfico de pizza por categoria e de barras por mês (Chart.js)
+- Orçamento e alertas por categoria
+- Gastos programados completos: recorrência e botão "Paguei"
+- Texto da IA com dicas sobre o mês

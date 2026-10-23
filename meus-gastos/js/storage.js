@@ -147,3 +147,33 @@ async function excluirProgramado(id) {
   // Os depósitos somem junto (on delete cascade no SQL)
   verificar(await db.from('gastos_programados').delete().eq('id', id));
 }
+
+/* --------------------------- IA --------------------------- */
+
+/**
+ * Manda um texto e/ou uma foto para a Edge Function "ler-gasto".
+ * O Supabase envia o login (token) junto, sozinho.
+ * Devolve { gasto, usos_restantes }. O gasto NÃO é salvo aqui:
+ * o app só preenche o formulário para você conferir.
+ */
+async function interpretarComIA({ texto, imagem }) {
+  const { data, error } = await db.functions.invoke('ler-gasto', {
+    body: { texto, imagem },
+  });
+
+  if (error) {
+    // Quando a função responde com erro (400, 429...), a mensagem
+    // que escrevemos lá fica dentro de error.context (a resposta HTTP).
+    let mensagem = null;
+    try {
+      if (error.context && typeof error.context.json === 'function') {
+        mensagem = (await error.context.json()).erro;
+      }
+    } catch { /* resposta sem JSON: fica a mensagem genérica */ }
+
+    const erroAmigavel = new Error(mensagem || error.message);
+    erroAmigavel.mensagemUsuario = mensagem; // o app.js mostra esta, se houver
+    throw erroAmigavel;
+  }
+  return data;
+}

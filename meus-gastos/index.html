@@ -67,6 +67,24 @@
       <section id="tela-novo" class="tela ativa" aria-labelledby="titulo-novo">
         <h2 id="titulo-novo">Novo gasto</h2>
 
+        <!-- ===== IA: preenche o formulário abaixo; você confere e salva ===== -->
+        <div id="caixa-ia" class="cartao caixa-ia">
+          <form id="form-ia" class="linha-ia" novalidate>
+            <input id="ia-texto" type="text" placeholder='Ex.: "posto 150 no débito"'
+                   maxlength="200" autocomplete="off" enterkeyhint="go" aria-label="Descreva o gasto">
+            <button type="submit" id="ia-botao-texto" class="botao-ia">✨ Preencher</button>
+          </form>
+
+          <!-- O <label> funciona como botão e abre o <input type="file"> escondido.
+               accept="image/*" deixa o iPhone oferecer câmera OU fotos. -->
+          <label class="botao-foto" id="ia-botao-foto">
+            📷 Foto do cupom
+            <input id="ia-foto" type="file" accept="image/*" hidden>
+          </label>
+
+          <p id="ia-status" class="mensagem info" role="status"></p>
+        </div>
+
         <form id="form-gasto" class="cartao" novalidate>
           <label>
             Valor (R$)
@@ -228,6 +246,7 @@
   <script src="js/storage.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/metas.js"></script>
+  <script src="js/ia.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

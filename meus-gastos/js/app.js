@@ -57,6 +57,8 @@ function mostrarAviso(texto, tipo = 'erro') {
 
 /** Mensagem amigável para erros de banco/rede. */
 function textoDoErro(erro) {
+  // Mensagens que a Edge Function já escreveu em português
+  if (erro && erro.mensagemUsuario) return erro.mensagemUsuario;
   const msg = (erro && erro.message) || '';
   if (/failed to fetch|network|load failed/i.test(msg)) return 'Sem conexão. Verifique a internet e tente de novo.';
   if (/jwt|session/i.test(msg)) return 'Sua sessão expirou. Entre de novo.';
@@ -93,6 +95,7 @@ function iniciar() {
 
   iniciarAuth();
   iniciarMetas();
+  iniciarIA();
 
   /* O Supabase avisa sempre que o login muda: ao abrir o app
      (INITIAL_SESSION), ao entrar (SIGNED_IN) e ao sair (SIGNED_OUT).
@@ -216,6 +219,7 @@ function entrarNaEdicao(gasto) {
   el.tituloNovo.textContent = 'Editar gasto';
   el.botaoSalvar.textContent = 'Salvar alterações';
   el.botaoCancelar.hidden = false;
+  iaEl.caixa.hidden = true; // a IA é para gastos novos, não para edição
   el.erro.textContent = '';
   mostrarTela('tela-novo');
 }
@@ -228,6 +232,8 @@ function sairDaEdicao() {
   el.tituloNovo.textContent = 'Novo gasto';
   el.botaoSalvar.textContent = 'Adicionar gasto';
   el.botaoCancelar.hidden = true;
+  iaEl.caixa.hidden = false;
+  statusIA('');
 }
 
 // ---------- Lista ----------

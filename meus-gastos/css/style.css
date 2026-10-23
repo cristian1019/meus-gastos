@@ -329,3 +329,47 @@ button:disabled { opacity: 0.6; cursor: wait; }
   font-size: 0.95rem;
 }
 .navegacao button.ativo { color: var(--cor-principal); font-weight: 700; }
+
+/* ---------- IA: caixa "Preencher" ---------- */
+.caixa-ia { margin-bottom: 14px; }
+.caixa-ia[hidden] { display: none; }
+
+.linha-ia { display: flex; gap: 8px; }
+.linha-ia input { flex: 1; min-width: 0; }
+
+.botao-ia {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--cor-principal);
+  color: var(--cor-sobre-principal);
+  font-weight: 600;
+}
+
+/* O <label> da foto, com cara de botão */
+label.botao-foto {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin: 10px 0 0;
+  border: 1px dashed var(--cor-principal);
+  border-radius: 8px;
+  color: var(--cor-principal);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+label.botao-foto.desativado { opacity: 0.5; pointer-events: none; }
+
+.caixa-ia .mensagem { margin: 10px 0 0; }
+.caixa-ia .mensagem:empty { display: none; }
+
+/* Brilho rápido nos campos que a IA preencheu */
+@keyframes destaque-ia {
+  from { background: color-mix(in srgb, var(--cor-principal) 25%, var(--cor-fundo)); }
+  to   { background: var(--cor-fundo); }
+}
+.preenchido-ia { animation: destaque-ia 1.5s ease-out; }
