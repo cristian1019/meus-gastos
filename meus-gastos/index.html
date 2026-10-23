@@ -66,10 +66,40 @@
       <!-- ---------- TELA: INÍCIO ---------- -->
       <section id="tela-inicio" class="tela ativa" aria-labelledby="titulo-inicio">
         <h2 id="titulo-inicio">Resumo de <span id="inicio-mes"></span></h2>
+        <p class="detalhe subtitulo-tela" id="inicio-intervalo"></p>
 
-        <!-- Orçamento: muda de texto e cor conforme o quanto já foi gasto -->
+        <!-- Saldo do período: renda − gastos − contas fixas − metas -->
+        <div id="inicio-saldo" class="cartao orcamento" hidden>
+          <p class="rotulo">Ainda pode gastar</p>
+          <p class="numero-grande" id="saldo-livre"></p>
+          <div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="saldo-barra">
+            <div class="barra-preenchida"></div>
+          </div>
+          <ul class="conta-saldo" id="saldo-conta"></ul>
+          <button type="button" class="botao-secundario acao-recebi">➕ Recebi um extra</button>
+          <details class="historico" id="saldo-extras" hidden>
+            <summary></summary>
+            <ul class="lista-depositos" id="lista-extras"></ul>
+          </details>
+        </div>
+        <div id="inicio-sem-renda" class="cartao" hidden>
+          <p class="rotulo">Quanto ainda posso gastar?</p>
+          <p class="detalhe">Informe sua renda e o dia do pagamento: o app desconta gastos, contas fixas e metas e mostra quanto sobra.</p>
+          <div class="dialogo-botoes">
+            <button type="button" class="botao-principal" data-ir="tela-config">Informar renda</button>
+            <button type="button" class="botao-secundario acao-recebi">➕ Recebi</button>
+          </div>
+        </div>
+
+        <!-- Contas fixas que ainda não entraram neste período -->
+        <div id="inicio-contas" class="cartao" hidden>
+          <p class="rotulo">Contas fixas do período</p>
+          <ul id="lista-contas-pendentes" class="lista-contas"></ul>
+        </div>
+
+        <!-- Limites: muda de texto e cor conforme o quanto já foi gasto -->
         <div id="inicio-orcamento" class="cartao orcamento">
-          <p class="rotulo">Orçamento do mês</p>
+          <p class="rotulo">Limites das categorias</p>
           <p class="numero-grande" id="orcamento-restante"></p>
           <div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="orcamento-barra">
             <div class="barra-preenchida"></div>
@@ -77,7 +107,7 @@
           <p class="detalhe" id="orcamento-detalhe"></p>
         </div>
         <div id="inicio-sem-orcamento" class="cartao" hidden>
-          <p class="rotulo">Orçamento do mês</p>
+          <p class="rotulo">Limites das categorias</p>
           <p class="detalhe">Defina um limite mensal nas categorias para acompanhar quanto ainda pode gastar.</p>
           <button type="button" class="botao-secundario" data-ir="tela-config">Definir limites</button>
         </div>
@@ -197,6 +227,7 @@
           </label>
         </div>
 
+        <p class="detalhe" id="filtro-intervalo"></p>
         <p class="resumo-filtro">Total filtrado: <strong id="total-filtrado">R$ 0,00</strong></p>
 
         <ul id="lista-gastos" class="lista"></ul>
@@ -225,6 +256,7 @@
             <input id="relatorio-mes" type="month">
           </label>
         </div>
+        <p class="detalhe" id="relatorio-intervalo"></p>
 
         <p id="relatorio-sem-grafico" class="mensagem erro" hidden>
           Não consegui carregar os gráficos. Verifique a internet e abra a tela de novo.
@@ -263,11 +295,55 @@
         <h2 id="titulo-config">Configurações</h2>
 
         <div class="titulo-secao">
+          <h3>Renda</h3>
+        </div>
+        <form id="form-renda" class="cartao" novalidate>
+          <div class="linha">
+            <label>
+              Renda fixa por mês (R$)
+              <input id="renda-fixa" type="text" inputmode="decimal" placeholder="Ex.: 2500,00" autocomplete="off">
+            </label>
+            <label class="campo-dia">
+              Dia do pagamento
+              <input id="renda-dia" type="number" inputmode="numeric" min="1" max="31" required>
+            </label>
+          </div>
+          <p class="detalhe" id="renda-exemplo"></p>
+          <p class="mensagem erro" id="erro-renda" role="alert"></p>
+          <button type="submit" id="renda-salvar" class="botao-principal">Salvar renda</button>
+        </form>
+        <p class="mensagem alerta" id="renda-aviso-limites"></p>
+
+        <div class="titulo-secao">
           <h3>Categorias e limites</h3>
         </div>
         <p class="detalhe" id="config-total-orcamento"></p>
         <ul id="lista-config-categorias" class="lista"></ul>
         <button type="button" id="botao-nova-categoria" class="botao-secundario botao-adicionar">➕ Nova categoria</button>
+
+        <div class="titulo-secao">
+          <h3>Contas fixas</h3>
+        </div>
+        <p class="detalhe">Contas que se repetem todo mês, como internet, streaming e luz. Com valor fixo, o app lança sozinho no dia; com valor que muda, ele lembra você de confirmar.</p>
+        <ul id="lista-config-recorrentes" class="lista"></ul>
+        <button type="button" id="botao-nova-recorrente" class="botao-secundario botao-adicionar">➕ Nova conta fixa</button>
+
+        <div class="titulo-secao">
+          <h3>Exportar</h3>
+        </div>
+        <div class="cartao">
+          <label>
+            Mês
+            <input id="exportar-mes" type="month">
+          </label>
+          <p class="detalhe" id="exportar-intervalo"></p>
+          <div class="dialogo-botoes">
+            <button type="button" id="botao-exportar-mes" class="botao-principal">Exportar mês</button>
+            <button type="button" id="botao-exportar-tudo" class="botao-secundario">Exportar tudo</button>
+          </div>
+          <p class="detalhe">Planilha CSV com gastos e extras. Abre no Excel, no Numbers e no Google Planilhas.</p>
+          <p class="mensagem" id="exportar-status" role="status"></p>
+        </div>
 
         <div class="titulo-secao">
           <h3>Conta</h3>
@@ -297,20 +373,32 @@
     <form id="form-meta" novalidate>
       <h2 id="dialogo-meta-titulo">Nova meta</h2>
       <label>
-        O que vai pagar?
+        Tipo
+        <select id="meta-tipo">
+          <option value="conta">💳 Conta a pagar (rematrícula, IPVA…)</option>
+          <option value="economia">💰 Economia (reserva, viagem…)</option>
+        </select>
+      </label>
+      <label>
+        <span id="meta-descricao-rotulo">O que vai pagar?</span>
         <input id="meta-descricao" type="text" placeholder="Ex.: Rematrícula" maxlength="80" required>
       </label>
       <div class="linha">
         <label>
-          Valor total (R$)
+          <span id="meta-valor-rotulo">Valor total (R$)</span>
           <input id="meta-valor" type="text" inputmode="decimal" placeholder="0,00" required>
         </label>
         <label>
-          Vence em
-          <input id="meta-vencimento" type="date" required>
+          <span id="meta-vencimento-rotulo">Vence em</span>
+          <input id="meta-vencimento" type="date">
         </label>
       </div>
-      <div class="linha">
+      <label class="so-economia" hidden>
+        Quanto guardar por mês (R$, opcional)
+        <input id="meta-valor-mensal" type="text" inputmode="decimal" placeholder="Ex.: 200,00">
+      </label>
+      <p class="detalhe so-economia" hidden>Com data, o app calcula sozinho quanto guardar por mês.</p>
+      <div class="linha so-conta">
         <label>
           Categoria
           <select id="meta-categoria"></select>
@@ -324,7 +412,7 @@
           </select>
         </label>
       </div>
-      <label class="opcao">
+      <label class="opcao so-conta">
         <input id="meta-incluir-mes" type="checkbox">
         Também guardar no mês do vencimento
       </label>
@@ -408,6 +496,107 @@
     </form>
   </dialog>
 
+  <!-- Recebi um extra -->
+  <dialog id="dialogo-entrada" class="dialogo" aria-labelledby="dialogo-entrada-titulo">
+    <form id="form-entrada" novalidate>
+      <h2 id="dialogo-entrada-titulo">Recebi um extra</h2>
+      <label>
+        Descrição
+        <input id="entrada-descricao" type="text" maxlength="80" placeholder="Ex.: Hora extra, freela" required>
+      </label>
+      <div class="linha">
+        <label>
+          Valor (R$)
+          <input id="entrada-valor" type="text" inputmode="decimal" placeholder="0,00" required>
+        </label>
+        <label>
+          Data
+          <input id="entrada-data" type="date" required>
+        </label>
+      </div>
+      <p id="erro-entrada" class="mensagem erro" role="alert"></p>
+      <div class="dialogo-botoes">
+        <button type="button" class="botao-secundario" data-fechar>Cancelar</button>
+        <button type="submit" id="entrada-salvar" class="botao-principal">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Criar / editar conta fixa -->
+  <dialog id="dialogo-recorrente" class="dialogo" aria-labelledby="dialogo-recorrente-titulo">
+    <form id="form-recorrente" novalidate>
+      <h2 id="dialogo-recorrente-titulo">Nova conta fixa</h2>
+      <label>
+        Descrição
+        <input id="recorrente-descricao" type="text" maxlength="80" placeholder="Ex.: Internet" required>
+      </label>
+      <div class="linha">
+        <label>
+          Valor (R$)
+          <input id="recorrente-valor" type="text" inputmode="decimal" placeholder="0,00" required>
+        </label>
+        <label class="campo-dia">
+          Dia
+          <input id="recorrente-dia" type="number" inputmode="numeric" min="1" max="31" required>
+        </label>
+      </div>
+      <div class="linha">
+        <label>
+          Categoria
+          <select id="recorrente-categoria"></select>
+        </label>
+        <label>
+          Pagamento
+          <select id="recorrente-forma">
+            <option value="pix">Pix</option>
+            <option value="debito">Débito</option>
+            <option value="credito">Crédito</option>
+            <option value="dinheiro">Dinheiro</option>
+            <option value="vale_refeicao">Vale-refeição</option>
+          </select>
+        </label>
+      </div>
+      <label class="opcao">
+        <input id="recorrente-automatico" type="checkbox" checked>
+        Lançar sozinha no dia (o valor é sempre igual)
+      </label>
+      <p class="detalhe">Desmarque para contas que mudam todo mês (luz, água): o app lembra e você confirma o valor.</p>
+      <label class="opcao" id="recorrente-ativo-caixa">
+        <input id="recorrente-ativo" type="checkbox" checked>
+        Ativa (desmarque para pausar)
+      </label>
+      <p id="erro-recorrente" class="mensagem erro" role="alert"></p>
+      <div class="dialogo-botoes">
+        <button type="button" class="botao-secundario" data-fechar>Cancelar</button>
+        <button type="submit" id="recorrente-salvar" class="botao-principal">Salvar</button>
+      </div>
+      <button type="button" id="recorrente-excluir" class="link link-perigo" hidden>Excluir conta fixa</button>
+    </form>
+  </dialog>
+
+  <!-- Confirmar (lançar) uma conta fixa -->
+  <dialog id="dialogo-lancar" class="dialogo" aria-labelledby="dialogo-lancar-titulo">
+    <form id="form-lancar" novalidate>
+      <h2 id="dialogo-lancar-titulo">Lançar conta fixa</h2>
+      <p class="detalhe" id="lancar-info"></p>
+      <div class="linha">
+        <label>
+          Valor (R$)
+          <input id="lancar-valor" type="text" inputmode="decimal" required>
+        </label>
+        <label>
+          Data
+          <input id="lancar-data" type="date" required>
+        </label>
+      </div>
+      <p id="erro-lancar" class="mensagem erro" role="alert"></p>
+      <div class="dialogo-botoes">
+        <button type="button" class="botao-secundario" data-fechar>Cancelar</button>
+        <button type="submit" id="lancar-salvar" class="botao-principal">Lançar</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- ===== Moldes (o JS copia e preenche) ===== -->
   <template id="molde-gasto">
     <li class="item">
@@ -443,6 +632,7 @@
       <div class="meta-acoes">
         <button type="button" class="acao-guardei botao-principal">Guardei</button>
         <button type="button" class="acao-paguei botao-secundario">Paguei</button>
+        <button type="button" class="acao-retirei botao-secundario" hidden>Retirei</button>
       </div>
       <div class="meta-links">
         <button type="button" class="link acao-editar-meta">Editar</button>
@@ -483,6 +673,9 @@
   <script src="js/inicio.js"></script>
   <script src="js/relatorios.js"></script>
   <script src="js/categorias.js"></script>
+  <script src="js/renda.js"></script>
+  <script src="js/recorrentes.js"></script>
+  <script src="js/exportar.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

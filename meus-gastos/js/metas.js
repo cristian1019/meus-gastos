@@ -1,6 +1,11 @@
 /* =========================================================
    metas.js — tela de Gastos Programados (completa).
 
+   Dois tipos (Etapa 5):
+   - "conta": tem vencimento e termina com "Paguei" (vira gasto)
+   - "economia": reserva, viagem… Prazo opcional, aceita "Retirei"
+     (um depósito negativo) e nunca vira gasto.
+
    - Criar e editar meta (janela), com categoria e recorrência
    - "Guardei": registra um depósito
    - Histórico de depósitos, com "Desfazer"
@@ -19,6 +24,11 @@ const metasEl = {
   dialogo: document.getElementById('dialogo-meta'),
   form: document.getElementById('form-meta'),
   titulo: document.getElementById('dialogo-meta-titulo'),
+  tipo: document.getElementById('meta-tipo'),
+  valorMensal: document.getElementById('meta-valor-mensal'),
+  rotuloDescricao: document.getElementById('meta-descricao-rotulo'),
+  rotuloValor: document.getElementById('meta-valor-rotulo'),
+  rotuloVencimento: document.getElementById('meta-vencimento-rotulo'),
   descricao: document.getElementById('meta-descricao'),
   valor: document.getElementById('meta-valor'),
   vencimento: document.getElementById('meta-vencimento'),
@@ -49,6 +59,7 @@ let metaPagando = null;
 function iniciarMetas() {
   metasEl.botaoNova.addEventListener('click', () => abrirDialogoMeta(null));
   metasEl.form.addEventListener('submit', aoSalvarMeta);
+  metasEl.tipo.addEventListener('change', aplicarTipoNoDialogo);
   metasEl.formPagar.addEventListener('submit', aoConfirmarPagamento);
   metasEl.lista.addEventListener('click', aoClicarNaMeta);
 }
@@ -63,14 +74,29 @@ function abrirDialogoMeta(meta) {
   metaEmEdicao = meta;
   metasEl.titulo.textContent = meta ? 'Editar meta' : 'Nova meta';
   metasEl.salvar.textContent = meta ? 'Salvar' : 'Criar meta';
+  metasEl.tipo.value = meta ? meta.tipo : 'conta';
+  metasEl.tipo.disabled = Boolean(meta); // trocar o tipo depois de criada confundiria o histórico
   metasEl.descricao.value = meta ? meta.descricao : '';
   metasEl.valor.value = meta ? centavosParaTexto(meta.valor_total) : '';
-  metasEl.vencimento.value = meta ? meta.data_vencimento : '';
+  metasEl.vencimento.value = meta && meta.data_vencimento ? meta.data_vencimento : '';
+  metasEl.valorMensal.value = meta && meta.valor_mensal ? centavosParaTexto(meta.valor_mensal) : '';
   metasEl.categoria.value = meta && meta.categoria_id ? meta.categoria_id : '';
   metasEl.recorrencia.value = meta ? meta.recorrencia : 'nenhuma';
   metasEl.incluirMes.checked = meta ? meta.incluir_mes_vencimento : false;
   metasEl.erro.textContent = '';
+  aplicarTipoNoDialogo();
   metasEl.dialogo.showModal();
+}
+
+/** Mostra só os campos que fazem sentido para o tipo escolhido. */
+function aplicarTipoNoDialogo() {
+  const economia = metasEl.tipo.value === 'economia';
+  metasEl.form.querySelectorAll('.so-conta').forEach((e) => (e.hidden = economia));
+  metasEl.form.querySelectorAll('.so-economia').forEach((e) => (e.hidden = !economia));
+  metasEl.rotuloDescricao.textContent = economia ? 'Para que é?' : 'O que vai pagar?';
+  metasEl.descricao.placeholder = economia ? 'Ex.: Reserva de emergência' : 'Ex.: Rematrícula';
+  metasEl.rotuloValor.textContent = economia ? 'Quanto quer juntar (R$)' : 'Valor total (R$)';
+  metasEl.rotuloVencimento.textContent = economia ? 'Até quando? (opcional)' : 'Vence em';
 }
 
 async function aoSalvarMeta(evento) {
@@ -80,17 +106,34 @@ async function aoSalvarMeta(evento) {
   const vencimento = metasEl.vencimento.value;
   const erro = (texto, campo) => { metasEl.erro.textContent = texto; campo.focus(); };
 
-  if (!descricao) return erro('Diga o que vai pagar.', metasEl.descricao);
-  if (valorTotal === null) return erro('Digite um valor válido, ex.: 1500,00', metasEl.valor);
-  if (!vencimento) return erro('Escolha a data de vencimento.', metasEl.vencimento);
-  // Ao CRIAR, vencimento no passado não faz sentido. Ao EDITAR, uma
-  // meta atrasada pode continuar com a data original.
-  if (!metaEmEdicao && vencimento < hojeISO()) return erro('A data de vencimento já passou.', metasEl.vencimento);
+  const economia = metasEl.tipo.value === 'economia';
+  const textoMensal = metasEl.valorMensal.value.trim();
+  const valorMensal = textoMensal === '' ? null : textoParaCentavos(textoMensal);
 
-  const meta = {
+  if (!descricao) return erro(economia ? 'Diga para que é a economia.' : 'Diga o que vai pagar.', metasEl.descricao);
+  if (valorTotal === null) return erro('Digite um valor válido, ex.: 1500,00', metasEl.valor);
+  if (!economia && !vencimento) return erro('Escolha a data de vencimento.', metasEl.vencimento);
+  // Ao CRIAR, data no passado não faz sentido. Ao EDITAR, uma meta
+  // atrasada pode continuar com a data original.
+  if (!metaEmEdicao && vencimento && vencimento < hojeISO()) return erro('Essa data já passou.', metasEl.vencimento);
+  if (economia && textoMensal !== '' && valorMensal === null) return erro('Valor por mês inválido (ou deixe vazio).', metasEl.valorMensal);
+
+  const meta = economia ? {
+    tipo: 'economia',
+    descricao,
+    valor_total: valorTotal,
+    data_vencimento: vencimento || null,
+    // Com data, o app calcula o valor por mês; sem data, vale o que você escolheu
+    valor_mensal: vencimento ? null : valorMensal,
+    incluir_mes_vencimento: false,
+    recorrencia: 'nenhuma',
+    categoria_id: null,
+  } : {
+    tipo: 'conta',
     descricao,
     valor_total: valorTotal,
     data_vencimento: vencimento,
+    valor_mensal: null,
     incluir_mes_vencimento: metasEl.incluirMes.checked,
     recorrencia: metasEl.recorrencia.value,
     categoria_id: metasEl.categoria.value || null,
@@ -180,6 +223,7 @@ async function aoClicarNaMeta(evento) {
 
   if (botao.classList.contains('acao-guardei')) return aoGuardar(meta, botao);
   if (botao.classList.contains('acao-paguei')) return abrirDialogoPagar(meta);
+  if (botao.classList.contains('acao-retirei')) return aoRetirar(meta, botao);
   if (botao.classList.contains('acao-editar-meta')) return abrirDialogoMeta(meta);
   if (botao.classList.contains('acao-desfazer')) return aoDesfazerDeposito(meta, botao);
 
@@ -215,10 +259,32 @@ async function aoGuardar(meta, botao) {
   }
 }
 
+/* Retirei: um depósito NEGATIVO. O app confere o saldo, e o banco
+   confere de novo (valor_guardado nunca pode ficar abaixo de zero). */
+async function aoRetirar(meta, botao) {
+  const resposta = prompt(
+    `Quanto você retirou de "${meta.descricao}"?\nGuardado agora: ${formatarCentavos(meta.valor_guardado)}`, '');
+  if (resposta === null) return;
+  const valor = textoParaCentavos(resposta);
+  if (valor === null) return mostrarAviso('Valor inválido. Use o formato 150,00.');
+  if (valor > meta.valor_guardado) return mostrarAviso('Não dá para retirar mais do que está guardado.');
+
+  botao.disabled = true;
+  try {
+    await registrarDeposito(meta.id, -valor);
+    await carregarDados();
+    mostrarAviso(`Retirado ${formatarCentavos(valor)} de "${meta.descricao}".`, 'sucesso');
+  } catch (e) {
+    botao.disabled = false;
+    mostrarAviso(textoDoErro(e));
+  }
+}
+
 async function aoDesfazerDeposito(meta, botao) {
   const deposito = meta.depositos_meta.find((d) => d.id === botao.dataset.deposito);
   if (!deposito) return;
-  if (!confirm(`Desfazer o depósito de ${formatarCentavos(deposito.valor)} (${formatarData(deposito.data)})?`)) return;
+  const tipo = deposito.valor < 0 ? 'a retirada' : 'o depósito';
+  if (!confirm(`Desfazer ${tipo} de ${formatarCentavos(Math.abs(deposito.valor))} (${formatarData(deposito.data)})?`)) return;
   botao.disabled = true;
   try {
     await excluirDeposito(deposito.id);
@@ -246,11 +312,14 @@ function desenharMetas() {
     const item = metasEl.molde.content.firstElementChild.cloneNode(true);
     item.dataset.id = meta.id;
 
+    const economia = meta.tipo === 'economia';
     item.querySelector('.meta-descricao').textContent = meta.descricao;
-    item.querySelector('.meta-vencimento').textContent = 'vence ' + formatarData(meta.data_vencimento);
+    item.querySelector('.meta-vencimento').textContent = !meta.data_vencimento
+      ? 'sem prazo'
+      : (economia ? 'até ' : 'vence ') + formatarData(meta.data_vencimento);
 
-    // Etiquetas: categoria e recorrência
-    const etiquetas = [];
+    // Etiquetas: tipo, categoria e recorrência
+    const etiquetas = economia ? ['💰 Economia'] : [];
     if (meta.categoria_id) {
       const cat = buscarCategoria(meta.categoria_id);
       etiquetas.push(`${cat.icone} ${cat.nome}`);
@@ -267,15 +336,22 @@ function desenharMetas() {
 
     item.querySelector('.meta-valores').textContent =
       `${formatarCentavos(calc.guardado)} de ${formatarCentavos(meta.valor_total)} (${porcentagem}%)`;
-    item.querySelector('.meta-plano').textContent = textoDoPlano(calc);
+    item.querySelector('.meta-plano').textContent = textoDoPlano(calc, meta);
 
     if (calc.atrasada) {
       const alerta = item.querySelector('.meta-alerta');
       alerta.hidden = false;
-      alerta.textContent = `⚠️ Venceu e ainda faltam ${formatarCentavos(calc.restante)}.`;
+      alerta.textContent = economia
+        ? `⏰ O prazo passou e faltam ${formatarCentavos(calc.restante)}. Que tal editar a data?`
+        : `⚠️ Venceu e ainda faltam ${formatarCentavos(calc.restante)}.`;
       item.classList.add('atrasada');
     }
-    if (calc.concluida) {
+    if (economia) {
+      // Economia: sem "Paguei"; "Retirei" quando há dinheiro guardado
+      item.querySelector('.acao-paguei').hidden = true;
+      item.querySelector('.acao-retirei').hidden = meta.valor_guardado <= 0;
+      if (calc.concluida) item.classList.add('concluida');
+    } else if (calc.concluida) {
       item.classList.add('concluida');
       item.querySelector('.acao-guardei').hidden = true;
       // Com a meta completa, "Paguei" vira o botão principal
@@ -297,12 +373,14 @@ function desenharDepositos(item, meta, aberto) {
     return;
   }
   caixa.open = aberto;
-  caixa.querySelector('summary').textContent = `Depósitos (${depositos.length})`;
+  caixa.querySelector('summary').textContent = `Histórico (${depositos.length})`;
   const ul = caixa.querySelector('.lista-depositos');
   depositos.forEach((d) => {
     const li = document.createElement('li');
     const texto = document.createElement('span');
-    texto.textContent = `${formatarData(d.data)} · ${formatarCentavos(d.valor)}`;
+    texto.textContent = d.valor < 0
+      ? `${formatarData(d.data)} · −${formatarCentavos(-d.valor)} (retirada)`
+      : `${formatarData(d.data)} · ${formatarCentavos(d.valor)}`;
     const desfazer = document.createElement('button');
     desfazer.type = 'button';
     desfazer.className = 'link link-perigo acao-desfazer';
@@ -314,9 +392,19 @@ function desenharDepositos(item, meta, aberto) {
 }
 
 /** A frase de orientação de cada meta. */
-function textoDoPlano(calc) {
-  if (calc.concluida) return '✅ Meta completa! Quando pagar, toque em "Paguei".';
+function textoDoPlano(calc, meta) {
+  const economia = meta && meta.tipo === 'economia';
+  if (calc.concluida) {
+    return economia ? '🎉 Objetivo alcançado!' : '✅ Meta completa! Quando pagar, toque em "Paguei".';
+  }
   if (calc.atrasada) return '';
+  // Economia sem prazo: segue o valor por mês escolhido (se houver)
+  if (calc.meses === null) {
+    if (!calc.valorMensal) return 'Sem prazo: guarde quando puder.';
+    return calc.faltaEsteMes > 0
+      ? `Plano: ${formatarCentavos(calc.valorMensal)} por mês. Este mês faltam ${formatarCentavos(calc.faltaEsteMes)}.`
+      : `Plano: ${formatarCentavos(calc.valorMensal)} por mês. ✅ Este mês já está guardado.`;
+  }
   if (calc.meses <= 1) {
     return calc.faltaEsteMes > 0
       ? `Guarde ${formatarCentavos(calc.faltaEsteMes)} ainda este mês.`

@@ -2,9 +2,9 @@
 
 App de controle de gastos pessoais, instalável no iPhone como PWA. Projeto de estudo e portfólio.
 
-**Etapa atual: 4 (relatórios e orçamento).** Tela Início com orçamento e alertas, gráficos por categoria e por mês, dicas da IA, categorias editáveis com limite e gastos programados completos (Paguei, recorrência, histórico).
+**Etapa atual: 5 (completo).** Renda com extras e mês começando no dia do salário, "ainda pode gastar", contas fixas automáticas ou com confirmação, metas de economia com retiradas e exportação em CSV, além de tudo das etapas anteriores: IA por texto e foto, orçamento por categoria, relatórios e metas.
 
-👉 Guias: **[Etapa 2 — colocar no ar](GUIA-ETAPA2.md)** · **[Etapa 3 — ligar a IA](GUIA-ETAPA3.md)** · **[Etapa 4 — orçamento e relatórios](GUIA-ETAPA4.md)**
+👉 Guias: **[Etapa 2 — colocar no ar](GUIA-ETAPA2.md)** · **[Etapa 3 — ligar a IA](GUIA-ETAPA3.md)** · **[Etapa 4 — orçamento e relatórios](GUIA-ETAPA4.md)** · **[Etapa 5 — renda e extras](GUIA-ETAPA5.md)**
 
 ## Estrutura
 
@@ -18,7 +18,8 @@ meus-gastos/
 ├── sql/
 │   ├── 01_tabelas.sql    → tabelas e regras de segurança do banco
 │   ├── 02_limite_ia.sql  → contador de usos da IA por dia
-│   └── 03_etapa4.sql     → categorias, migração dos gastos, função "Paguei"
+│   ├── 03_etapa4.sql     → categorias, migração dos gastos, função "Paguei"
+│   └── 04_etapa5.sql     → renda, extras, contas fixas, economia (idempotente)
 ├── supabase/functions/ler-gasto/index.ts
 │                         → servidor da IA (roda no Supabase, guarda a chave)
 └── js/
@@ -30,6 +31,9 @@ meus-gastos/
     ├── metas.js       → gastos programados (criar, editar, guardar, pagar)
     ├── relatorios.js  → gráficos e dicas da IA
     ├── categorias.js  → Configurações: categorias e limites
+    ├── renda.js       → renda, dia do pagamento e extras ("Recebi")
+    ├── recorrentes.js → contas fixas (automáticas ou com confirmação)
+    ├── exportar.js    → planilha CSV
     ├── ia.js          → caixa "Preencher" e foto do cupom
     └── app.js         → o "maestro": login, dados, navegação, lista
 ```
@@ -160,7 +164,43 @@ O endereço do script tem a versão exata. Assim, uma atualização da bibliotec
 ### Janelas com `<dialog>`
 Criar meta, pagar e editar categoria usam o `<dialog>` nativo do navegador: `showModal()` abre por cima, escurece o fundo e o gesto de voltar fecha. Sem biblioteca nenhuma.
 
-## Próxima etapa (5): Extras
-- Exportar gastos em CSV ou Excel
-- Gastos recorrentes (contas fixas que se lançam sozinhas)
-- Metas de economia (reserva sem conta específica)
+## Decisões da Etapa 5
+
+### O "mês" começa no dia do salário
+Com salário no dia 30, o período **"novembro"** vai de **30/10 a 29/11**. As regras (em `periodo()`, no `utils.js`):
+- **Mês sem aquele dia** (fevereiro e o dia 30): o período começa no **último dia** do mês. Assim nenhum dia fica de fora nem é contado duas vezes. Testei 3 anos inteiros, dia por dia, com o pagamento nos dias 1, 15, 16, 28, 30 e 31.
+- **Nome do período:** o do mês com mais dias dentro dele. Pagamento até o dia 15 → nome do mês em que começa; depois do 15 → do mês seguinte (o salário de 30/10 sustenta novembro).
+- O período usa a mesma chave de um mês (`"2026-11"`). Por isso filtros, gráficos e metas continuaram funcionando: bastou trocar `mesDaData()` por `periodo()`.
+
+### "Ainda pode gastar"
+```
+  renda fixa + extras do período
+− gastos do período
+− contas fixas que ainda vão cair no período
+− quanto guardar para as metas neste período
+```
+Tudo calculado no código (`calcularSaldo()`), e cada linha aparece na tela, para ficar claro de onde vem o número.
+
+### Contas fixas: o banco impede duplicar
+Cada gasto lançado por uma conta fixa guarda **de qual conta** (`recorrente_id`) e **de qual mês** (`competencia`). Uma regra `UNIQUE (recorrente_id, competencia)` no banco garante que a mesma conta nunca entra duas vezes no mesmo mês, mesmo com o app aberto no iPhone e no computador ao mesmo tempo. O app usa `upsert` com `ignoreDuplicates`: tenta lançar e, se já existir, o banco simplesmente ignora.
+
+Limitação conhecida: um app web não roda com o celular bloqueado. As contas automáticas entram quando você **abre** o app, com a data certa de cada uma.
+
+### Retirada = depósito negativo, com duas barreiras
+"Retirei" grava um depósito com valor negativo. O app confere se há saldo, e o **banco confere de novo**: o gatilho recalcula o `valor_guardado`, e a regra `valor_guardado >= 0` (da Etapa 2) recusa o saldo negativo, desfazendo a retirada inteira. Os testes simulam o app "achando" que havia saldo, e o banco recusa mesmo assim.
+
+### CSV para o Excel brasileiro
+- Separador `;` e valores como `1234,56`, que é o que o Excel em português espera.
+- `BOM` (`\uFEFF`) no início, para os acentos não virarem "Ã§".
+- **Proteção contra injeção de fórmula:** uma descrição como `=SOMA(...)` seria executada pelo Excel. O app coloca um `'` na frente, e ela vira texto comum.
+- No iPhone, o arquivo vai pela tela de compartilhar do sistema (Web Share API). No computador, é um download comum.
+
+### SQL idempotente
+Depois do susto na Etapa 4, o SQL desta etapa pode rodar quantas vezes for preciso: `if not exists`, `drop ... if exists` antes de criar e `create or replace`. Testei rodando duas vezes seguidas e também comando por comando, separados (como o editor do Supabase às vezes faz), e não houve nenhum erro.
+
+### Bug que os testes pegaram
+Uma meta de economia **sem prazo** travava o resumo enviado para as dicas da IA, que tentava formatar uma data inexistente. Os testes da tela encontraram o problema antes de ele chegar ao celular.
+
+## Ideias para depois
+- Notificações no iPhone (PWA instalado, iOS 16.4+) para lembrar contas a confirmar
+- Migrar a interface para React, como estudo

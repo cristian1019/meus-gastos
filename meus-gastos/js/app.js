@@ -17,9 +17,16 @@ const estado = {
   categorias: [],
   gastos: [],
   programados: [],
+  entradas: [],      // extras ("Recebi")
+  recorrentes: [],   // contas fixas
+  config: { renda_fixa: null, dia_pagamento: 1 },
   usuarioId: null,
   email: '',
 };
+
+// Depois do login, os filtros de mês só podem ser ajustados quando
+// soubermos o dia do pagamento (que vem do banco). Esta "bandeira" avisa.
+let ajustarFiltrosAoCarregar = false;
 
 // ---------- Referências aos elementos ----------
 const el = {
@@ -68,6 +75,8 @@ function textoDoErro(erro) {
   if (/failed to fetch|network|load failed/i.test(msg)) return 'Sem conexão. Verifique a internet e tente de novo.';
   if (/jwt|session/i.test(msg)) return 'Sua sessão expirou. Entre de novo.';
   if (/já paga|não encontrada/i.test(msg)) return 'Essa meta já foi paga ou não existe mais.';
+  if (/recorrente_competencia/i.test(msg)) return 'Essa conta fixa já foi lançada neste mês.';
+  if (/valor_guardado_check/i.test(msg)) return 'Não dá para retirar mais do que está guardado.';
   console.error(erro);
   return 'Não foi possível concluir. Tente de novo.';
 }
@@ -92,7 +101,7 @@ function iniciar() {
   }
 
   el.data.value = hojeISO();
-  el.filtroMes.value = mesDaData(hojeISO());
+  el.filtroMes.value = periodo(hojeISO());
 
   el.form.addEventListener('submit', aoEnviarFormulario);
   el.botaoCancelar.addEventListener('click', sairDaEdicao);
@@ -120,6 +129,9 @@ function iniciar() {
   iniciarIA();
   iniciarRelatorios();
   iniciarCategorias();
+  iniciarRenda();
+  iniciarRecorrentes();
+  iniciarExportar();
 
   /* O Supabase avisa sempre que o login muda: ao abrir o app
      (INITIAL_SESSION), ao entrar (SIGNED_IN) e ao sair (SIGNED_OUT).
@@ -144,6 +156,10 @@ async function aoMudarLogin(sessao) {
     estado.categorias = [];
     estado.gastos = [];
     estado.programados = [];
+    estado.entradas = [];
+    estado.recorrentes = [];
+    estado.config = { renda_fixa: null, dia_pagamento: 1 };
+    definirDiaPagamento(1);
     sairDaEdicao();
     document.querySelectorAll('dialog[open]').forEach((d) => d.close());
     atualizarTela();
@@ -153,15 +169,25 @@ async function aoMudarLogin(sessao) {
 
   document.body.className = 'logado';
   mostrarTela('tela-inicio');
+  ajustarFiltrosAoCarregar = true;
   await carregarDados();
+}
+
+/** Coloca os filtros de mês (Lista e Relatórios) no período atual. */
+function filtrosNoPeriodoAtual() {
+  el.filtroMes.value = periodo(hojeISO());
+  relEl.mes.value = periodo(hojeISO());
+  expEl.mes.value = periodo(hojeISO());
+  mostrarIntervaloExportar();
 }
 
 // ---------- Carregar do banco ----------
 async function carregarDados() {
   try {
-    // Promise.all: busca as três listas AO MESMO TEMPO (mais rápido)
-    let [categorias, gastos, programados] = await Promise.all([
+    // Promise.all: busca tudo AO MESMO TEMPO (mais rápido)
+    let [categorias, gastos, programados, config, entradas, recorrentes] = await Promise.all([
       listarCategorias(), listarGastos(), listarProgramados(),
+      lerConfiguracoes(), listarEntradas(), listarRecorrentes(),
     ]);
 
     // Conta nova (sem categorias ainda): cria as padrão e busca de novo
@@ -173,6 +199,21 @@ async function carregarDados() {
     estado.categorias = categorias;
     estado.gastos = gastos;
     estado.programados = programados;
+    estado.entradas = entradas;
+    estado.recorrentes = recorrentes;
+    estado.config = config || { renda_fixa: null, dia_pagamento: 1 };
+    definirDiaPagamento(estado.config.dia_pagamento);
+    if (ajustarFiltrosAoCarregar) {
+      filtrosNoPeriodoAtual();
+      ajustarFiltrosAoCarregar = false;
+    }
+
+    // Contas fixas automáticas que já venceram e ainda não entraram
+    const lancadas = await lancarContasAutomaticas();
+    if (lancadas.length > 0) {
+      estado.gastos = await listarGastos();
+      mostrarAviso(`🔁 Lançadas sozinhas: ${lancadas.map((g) => g.descricao).join(', ')}.`, 'sucesso');
+    }
   } catch (erro) {
     mostrarAviso(textoDoErro(erro));
   }
@@ -197,6 +238,7 @@ function atualizarSelectsDeCategoria() {
   montar(el.filtroCategoria, { texto: 'Todas', valor: '' });
   montar(document.getElementById('meta-categoria'), { texto: 'Sem categoria', valor: '' });
   montar(document.getElementById('pagar-categoria'));
+  montar(document.getElementById('recorrente-categoria'));
 }
 
 // ---------- Navegação ----------
@@ -242,7 +284,7 @@ async function aoEnviarFormulario(evento) {
     const salvo = await salvarGasto(gasto);
     const estavaEditando = Boolean(idEmEdicao);
     sairDaEdicao();
-    el.filtroMes.value = mesDaData(salvo.data);
+    el.filtroMes.value = periodo(salvo.data);
     await carregarDados();
     if (estavaEditando) {
       mostrarTela('tela-lista');
@@ -263,7 +305,7 @@ function avisarSalvo(gasto) {
   const base = `Salvo: ${gasto.descricao} (${formatarCentavos(gasto.valor)}).`;
   if (!cat.limite_mensal) return mostrarAviso(base, 'sucesso');
 
-  const orc = calcularOrcamento(estado.gastos, estado.categorias, mesDaData(gasto.data));
+  const orc = calcularOrcamento(estado.gastos, estado.categorias, periodo(gasto.data));
   const linha = orc.linhas.find((l) => l.categoria.id === cat.id);
   if (linha.nivel === 'estourou') {
     mostrarAviso(`${base} 🔴 ${cat.nome} passou do limite: ${formatarCentavos(linha.gasto)} de ${formatarCentavos(linha.limite)}.`, 'erro');
@@ -348,15 +390,16 @@ async function aoImportar() {
 
 // ---------- Desenhar ----------
 function atualizarTela() {
-  const mesAtual = mesDaData(hojeISO());
+  const mesAtual = periodo(hojeISO());
   el.totalMes.textContent = formatarCentavos(
-    somarValores(estado.gastos.filter((g) => mesDaData(g.data) === mesAtual))
+    somarValores(estado.gastos.filter((g) => periodo(g.data) === mesAtual))
   );
 
   const mes = el.filtroMes.value;
   const categoria = el.filtroCategoria.value;
+  document.getElementById('filtro-intervalo').textContent = mes ? `Período: ${textoDoIntervalo(mes)}` : '';
   const filtrados = estado.gastos.filter((g) =>
-    (!mes || mesDaData(g.data) === mes) &&
+    (!mes || periodo(g.data) === mes) &&
     (!categoria || g.categoria_id === categoria)
   );
   el.totalFiltrado.textContent = formatarCentavos(somarValores(filtrados));
@@ -371,6 +414,8 @@ function atualizarTela() {
   desenharInicio();
   desenharMetas();
   desenharCategorias();
+  desenharRendaConfig();
+  desenharRecorrentesConfig();
   // Relatórios: só se a tela estiver aberta (ver mostrarTela)
   if (document.getElementById('tela-relatorios').classList.contains('ativa')) desenharRelatorios();
 }
@@ -386,7 +431,8 @@ function desenharGastos(ul, gastos) {
     item.querySelector('.item-icone').textContent = cat.icone;
     item.querySelector('.item-descricao').textContent = gasto.descricao;
     item.querySelector('.item-detalhes').textContent =
-      `${cat.nome} · ${formatarData(gasto.data)} · ${NOMES_PAGAMENTO[gasto.forma_pagamento] || ''}`;
+      `${cat.nome} · ${formatarData(gasto.data)} · ${NOMES_PAGAMENTO[gasto.forma_pagamento] || ''}` +
+      (gasto.competencia ? ' · 🔁 conta fixa' : '');
     item.querySelector('.item-valor').textContent = formatarCentavos(gasto.valor);
     ul.append(item);
   });

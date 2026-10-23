@@ -28,7 +28,7 @@ function verificar({ data, error }) {
 }
 
 // Escolher as colunas (em vez de '*') evita trazer dados que não usamos.
-const COLUNAS_GASTO = 'id, valor, descricao, categoria_id, data, forma_pagamento, criado_em';
+const COLUNAS_GASTO = 'id, valor, descricao, categoria_id, data, forma_pagamento, criado_em, recorrente_id, competencia';
 
 /* ------------------------- GASTOS ------------------------- */
 
@@ -52,6 +52,11 @@ async function salvarGasto(gasto) {
     data: gasto.data,
     forma_pagamento: gasto.forma_pagamento,
   };
+  // Gasto vindo de uma conta fixa: guarda de qual conta e de qual mês
+  if (!gasto.id && gasto.recorrente_id) {
+    campos.recorrente_id = gasto.recorrente_id;
+    campos.competencia = gasto.competencia;
+  }
 
   const consulta = gasto.id
     ? db.from('gastos').update(campos).eq('id', gasto.id)
@@ -173,9 +178,10 @@ async function listarProgramados() {
   const metas = verificar(
     await db
       .from('gastos_programados')
-      .select('id, descricao, valor_total, data_vencimento, valor_guardado, incluir_mes_vencimento, recorrencia, categoria_id, status, depositos_meta(id, valor, data, criado_em)')
+      .select('id, tipo, descricao, valor_total, valor_mensal, data_vencimento, valor_guardado, incluir_mes_vencimento, recorrencia, categoria_id, status, depositos_meta(id, valor, data, criado_em)')
       .eq('status', 'ativo')
-      .order('data_vencimento', { ascending: true })
+      // Metas sem prazo (economia) vão para o fim da lista
+      .order('data_vencimento', { ascending: true, nullsFirst: false })
   );
   // Depósitos do mais novo para o mais antigo (para o histórico)
   metas.forEach((m) => m.depositos_meta.sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1)));
@@ -185,6 +191,8 @@ async function listarProgramados() {
 /** Cria (sem id) ou edita (com id) uma meta. */
 async function salvarProgramado(meta) {
   const campos = {
+    tipo: meta.tipo,
+    valor_mensal: meta.valor_mensal,
     descricao: meta.descricao,
     valor_total: meta.valor_total,
     data_vencimento: meta.data_vencimento,
@@ -216,7 +224,7 @@ async function pagarProgramado(metaId, pagamento) {
 }
 
 /**
- * Registra um "Guardei". O banco recalcula o valor_guardado
+ * Registra um "Guardei" (valor positivo) ou um "Retirei" (negativo). O banco recalcula o valor_guardado
  * sozinho (gatilho no SQL). Mandamos a data local porque o
  * "current_date" do servidor usa o fuso UTC.
  */
@@ -280,4 +288,94 @@ async function chamarFuncaoIA(corpo) {
     throw erroAmigavel;
   }
   return data;
+}
+
+/* ------------------ CONFIGURAÇÕES (renda) ------------------ */
+
+/** Renda fixa e dia do pagamento. null = ainda não configurou. */
+async function lerConfiguracoes() {
+  // maybeSingle(): "uma linha ou nenhuma" (sem erro quando não existe)
+  return verificar(
+    await db.from('configuracoes').select('renda_fixa, dia_pagamento').maybeSingle()
+  );
+}
+
+/** upsert: cria a linha na primeira vez e atualiza nas outras. */
+async function salvarConfiguracoes(config) {
+  verificar(
+    await db.from('configuracoes').upsert(
+      {
+        renda_fixa: config.renda_fixa,
+        dia_pagamento: config.dia_pagamento,
+        atualizado_em: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' }
+    )
+  );
+}
+
+/* ------------------ ENTRADAS (extras) ------------------ */
+const COLUNAS_ENTRADA = 'id, valor, descricao, data, criado_em';
+
+async function listarEntradas() {
+  return verificar(
+    await db.from('entradas').select(COLUNAS_ENTRADA)
+      .order('data', { ascending: false }).order('criado_em', { ascending: false })
+  );
+}
+
+async function salvarEntrada(entrada) {
+  const campos = { valor: entrada.valor, descricao: entrada.descricao, data: entrada.data };
+  const consulta = entrada.id
+    ? db.from('entradas').update(campos).eq('id', entrada.id)
+    : db.from('entradas').insert(campos);
+  verificar(await consulta);
+}
+
+async function excluirEntrada(id) {
+  verificar(await db.from('entradas').delete().eq('id', id));
+}
+
+/* ------------------ CONTAS FIXAS ------------------ */
+const COLUNAS_RECORRENTE = 'id, descricao, valor, categoria_id, forma_pagamento, dia_do_mes, automatico, ativo, criado_em';
+
+async function listarRecorrentes() {
+  return verificar(
+    await db.from('gastos_recorrentes').select(COLUNAS_RECORRENTE)
+      .order('dia_do_mes', { ascending: true }).order('descricao', { ascending: true })
+  );
+}
+
+async function salvarRecorrente(r) {
+  const campos = {
+    descricao: r.descricao,
+    valor: r.valor,
+    categoria_id: r.categoria_id,
+    forma_pagamento: r.forma_pagamento,
+    dia_do_mes: r.dia_do_mes,
+    automatico: r.automatico,
+    ativo: r.ativo,
+  };
+  const consulta = r.id
+    ? db.from('gastos_recorrentes').update(campos).eq('id', r.id)
+    : db.from('gastos_recorrentes').insert(campos);
+  verificar(await consulta);
+}
+
+async function excluirRecorrente(id) {
+  // Os gastos já lançados continuam (o banco só desfaz a ligação)
+  verificar(await db.from('gastos_recorrentes').delete().eq('id', id));
+}
+
+/**
+ * Lança várias contas fixas de uma vez. Se outro aparelho já lançou
+ * a mesma conta no mesmo mês, o banco ignora (regra UNIQUE + upsert
+ * com ignoreDuplicates). Devolve só as que entraram agora.
+ */
+async function lancarContasFixas(gastos) {
+  return verificar(
+    await db.from('gastos')
+      .upsert(gastos, { onConflict: 'recorrente_id,competencia', ignoreDuplicates: true })
+      .select(COLUNAS_GASTO)
+  );
 }

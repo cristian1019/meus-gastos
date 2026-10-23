@@ -152,16 +152,39 @@ function mesesParaGuardar(hoje, vencimento, incluirMesVencimento) {
  */
 function calcularMeta(meta, hoje = hojeISO()) {
   const depositos = meta.depositos_meta || [];
-  const mesAtual = mesDaData(hoje);
+  // Desde a Etapa 5, "mês" = período do pagamento (ver periodo())
+  const mesAtual = periodo(hoje);
 
   const guardado = meta.valor_guardado;
   const restante = Math.max(0, meta.valor_total - guardado);
+  // Saldo do mês: depósitos menos retiradas (retirada = valor negativo)
   const guardadoEsteMes = somarValores(
-    depositos.filter((d) => mesDaData(d.data) === mesAtual)
+    depositos.filter((d) => periodo(d.data) === mesAtual)
   );
   const guardadoAntesDoMes = guardado - guardadoEsteMes;
 
-  const meses = mesesParaGuardar(hoje, meta.data_vencimento, meta.incluir_mes_vencimento);
+  const base = {
+    guardado,
+    restante,
+    concluida: restante === 0,
+    progresso: Math.min(1, guardado / meta.valor_total), // 0 a 1
+    guardadoEsteMes,
+  };
+
+  // Meta de economia SEM prazo: o plano é o valor por mês que você
+  // escolheu (se escolheu). Não existe "atrasada".
+  if (!meta.data_vencimento) {
+    const valorMensal = meta.valor_mensal || 0;
+    return {
+      ...base,
+      meses: null,
+      valorMensal,
+      faltaEsteMes: Math.min(restante, Math.max(0, valorMensal - guardadoEsteMes)),
+      atrasada: false,
+    };
+  }
+
+  const meses = mesesParaGuardar(mesAtual, periodo(meta.data_vencimento), meta.incluir_mes_vencimento);
   const atrasada = meta.data_vencimento < hoje && restante > 0;
 
   // Se não sobrou nenhum mês (vence agora ou já venceu), tudo precisa sair já.
@@ -173,13 +196,9 @@ function calcularMeta(meta, hoje = hojeISO()) {
   const faltaEsteMes = Math.min(restante, Math.max(0, valorMensal - guardadoEsteMes));
 
   return {
-    guardado,
-    restante,
-    concluida: restante === 0,
-    progresso: Math.min(1, guardado / meta.valor_total), // 0 a 1
+    ...base,
     meses: Math.max(0, meses),
     valorMensal,
-    guardadoEsteMes,
     faltaEsteMes,
     atrasada,
   };
@@ -238,7 +257,7 @@ function nivelDoLimite(proporcao) {
 }
 
 function calcularOrcamento(gastos, categorias, mes) {
-  const doMes = gastos.filter((g) => mesDaData(g.data) === mes);
+  const doMes = gastos.filter((g) => periodo(g.data) === mes);
 
   // Soma por categoria numa passada só: { idDaCategoria: centavos }
   const porCategoria = {};
@@ -275,5 +294,116 @@ function calcularOrcamento(gastos, categorias, mes) {
     alertas: comLimite
       .filter((l) => l.nivel !== 'ok')
       .sort((a, b) => b.proporcao - a.proporcao),
+  };
+}
+
+/* =========================================================
+   PERÍODO — o "mês" do app começa no dia do pagamento.
+
+   Com pagamento no dia 30:
+     período "novembro" = 30/10 até 29/11
+   Com pagamento no dia 1 (padrão): é o mês do calendário.
+
+   Regras:
+   - Mês sem aquele dia (fevereiro e o dia 30): o período começa no
+     ÚLTIMO dia do mês. Assim não sobra nem repete nenhum dia.
+   - Nome do período: o mês com mais dias dentro dele. Dia de
+     pagamento até 15 → nome do mês em que começa (5/out a 4/nov =
+     "outubro"); depois de 15 → nome do mês seguinte (30/out a 29/nov
+     = "novembro", o mês que o salário de 30/10 vai sustentar).
+   - O período é identificado por "AAAA-MM", igual a um mês. Por isso
+     o resto do app (filtros, gráficos, metas) funciona sem mudar.
+   ========================================================= */
+let diaPagamento = 1;
+
+/** Chamado pelo app ao carregar as configurações do usuário. */
+function definirDiaPagamento(dia) {
+  diaPagamento = Number(dia) >= 1 && Number(dia) <= 31 ? Number(dia) : 1;
+}
+
+/** mes: 1 a 12. O "dia 0" do mês seguinte é o último dia deste. */
+function diasNoMes(ano, mes) {
+  return new Date(ano, mes, 0).getDate();
+}
+
+/** Data (AAAA-MM-DD) em que o período começa dentro de um mês do calendário. */
+function inicioNoMes(mesCalendario) {
+  const [ano, m] = mesCalendario.split('-').map(Number);
+  const dia = Math.min(diaPagamento, diasNoMes(ano, m));
+  return `${mesCalendario}-${String(dia).padStart(2, '0')}`;
+}
+
+/** "2026-11-01" → "2026-10-31" */
+function diaAnterior(dataISO) {
+  const d = new Date(dataISO + 'T12:00:00'); // meio-dia: evita surpresas de fuso
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const nomeiaPeloMesSeguinte = () => diaPagamento > 15;
+
+/** A que período pertence uma data. "2026-10-30" (dia 30) → "2026-11" */
+function periodo(dataISO) {
+  let mesInicio = mesDaData(dataISO);
+  if (dataISO < inicioNoMes(mesInicio)) mesInicio = somarMeses(mesInicio, -1);
+  return nomeiaPeloMesSeguinte() ? somarMeses(mesInicio, 1) : mesInicio;
+}
+
+/** Primeiro e último dia de um período. "2026-11" (dia 30) → 30/10 a 29/11 */
+function intervaloDoPeriodo(chave) {
+  const mesInicio = nomeiaPeloMesSeguinte() ? somarMeses(chave, -1) : chave;
+  return {
+    inicio: inicioNoMes(mesInicio),
+    fim: diaAnterior(inicioNoMes(somarMeses(mesInicio, 1))),
+  };
+}
+
+/** "30/10 a 29/11" */
+function textoDoIntervalo(chave) {
+  const { inicio, fim } = intervaloDoPeriodo(chave);
+  const curto = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+  return `${curto(inicio)} a ${curto(fim)}`;
+}
+
+/** Data local (AAAA-MM-DD) de um horário do banco ("2026-10-23T18:00:00Z"). */
+function dataLocal(timestamp) {
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/* =========================================================
+   CONTAS FIXAS — em que datas uma conta "cai" num intervalo.
+   A conta segue o CALENDÁRIO (dia 10 de cada mês; dia 31 vira o
+   último dia em meses menores). "competencia" = mês da conta, usado
+   pelo banco para não lançar a mesma conta duas vezes no mesmo mês.
+   ========================================================= */
+function ocorrenciasNoIntervalo(recorrente, inicio, fim) {
+  const lista = [];
+  for (let mes = mesDaData(inicio); mes <= mesDaData(fim); mes = somarMeses(mes, 1)) {
+    const [ano, m] = mes.split('-').map(Number);
+    const dia = Math.min(recorrente.dia_do_mes, diasNoMes(ano, m));
+    const data = `${mes}-${String(dia).padStart(2, '0')}`;
+    if (data >= inicio && data <= fim) lista.push({ data, competencia: mes });
+  }
+  return lista;
+}
+
+/* =========================================================
+   SALDO DO PERÍODO — "quanto ainda posso gastar"
+     renda (fixa + extras) − gastos − contas fixas a cair − metas
+   Tudo em centavos. Pode dar negativo (passou da renda).
+   ========================================================= */
+function calcularSaldo({ rendaFixa, extras, gastos, contasACair, guardarMetas }) {
+  const renda = (rendaFixa || 0) + extras;
+  const comprometido = gastos + contasACair + guardarMetas;
+  return {
+    renda,
+    rendaFixa: rendaFixa || 0,
+    extras,
+    gastos,
+    contasACair,
+    guardarMetas,
+    livre: renda - comprometido,
+    proporcao: renda > 0 ? comprometido / renda : null,
   };
 }

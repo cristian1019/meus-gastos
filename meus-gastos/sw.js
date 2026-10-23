@@ -14,7 +14,7 @@
    ========================================================= */
 
 // Mude o número quando mudar a lista de arquivos abaixo
-const NOME_CACHE = 'meus-gastos-v4';
+const NOME_CACHE = 'meus-gastos-v5';
 
 const ARQUIVOS_DO_APP = [
   './',
@@ -29,6 +29,9 @@ const ARQUIVOS_DO_APP = [
   'js/inicio.js',
   'js/relatorios.js',
   'js/categorias.js',
+  'js/renda.js',
+  'js/recorrentes.js',
+  'js/exportar.js',
   'js/app.js',
   'manifest.webmanifest',
   'icones/icone-192.png',

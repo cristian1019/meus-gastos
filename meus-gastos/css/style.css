@@ -213,6 +213,9 @@ input:focus, select:focus {
 }
 
 .linha { display: flex; gap: 12px; }
+/* Rótulos de tamanhos diferentes (um quebra em 2 linhas): os campos
+   ficam alinhados pela base, lado a lado */
+.linha { align-items: flex-end; }
 
 .mensagem { font-size: 0.9rem; min-height: 1.2em; margin: 0 0 8px; }
 .mensagem.erro { color: var(--cor-perigo); }
@@ -554,9 +557,9 @@ label.botao-foto.desativado { opacity: 0.5; pointer-events: none; }
 .meta-etiquetas[hidden] { display: none; }
 .meta-acoes .botao-secundario { margin-top: 0; min-height: 42px; flex: 1; }
 .meta-links { display: flex; gap: 12px; margin-top: 4px; }
-.meta-depositos { margin-top: 4px; font-size: 0.9rem; }
+.meta-depositos, .historico { margin-top: 4px; font-size: 0.9rem; }
 .meta-depositos[hidden] { display: none; }
-.meta-depositos summary { cursor: pointer; color: var(--cor-texto-suave); padding: 6px 0; }
+.meta-depositos summary, .historico summary { cursor: pointer; color: var(--cor-texto-suave); padding: 6px 0; }
 .lista-depositos { list-style: none; margin: 0; padding: 0; }
 .lista-depositos li {
   display: flex;
@@ -592,3 +595,50 @@ label.botao-foto.desativado { opacity: 0.5; pointer-events: none; }
 .linha-icone .campo-icone input { text-align: center; font-size: 1.3rem; padding: 6px; }
 .linha-icone .campo-cor { flex: 0 0 56px; }
 .linha-icone input[type="color"] { padding: 4px; height: 44px; cursor: pointer; }
+
+/* =========================================================
+   ETAPA 5
+   ========================================================= */
+
+/* Regra geral: o atributo "hidden" sempre esconde. Sem isso, um
+   elemento com display: flex (como os <label>) ignora o hidden. */
+[hidden] { display: none !important; }
+
+.subtitulo-tela { margin: -8px 0 12px; }
+.mensagem.alerta { color: var(--cor-alerta); }
+.mensagem:empty { display: none; }
+
+/* ---------- "Ainda pode gastar" ---------- */
+.conta-saldo { list-style: none; margin: 12px 0; padding: 0; font-size: 0.92rem; }
+.conta-saldo li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  color: var(--cor-texto-suave);
+  font-variant-numeric: tabular-nums;
+}
+.conta-saldo li:first-child { color: var(--cor-texto); }
+#inicio-saldo .botao-secundario { margin-top: 0; }
+
+/* ---------- Contas fixas do período ---------- */
+.lista-contas { list-style: none; margin: 0; padding: 0; }
+.lista-contas li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+}
+.lista-contas li + li { border-top: 1px solid var(--cor-borda); }
+.conta-info { display: flex; flex-direction: column; min-width: 0; }
+.conta-nome { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conta-detalhe { font-size: 0.85rem; color: var(--cor-texto-suave); font-variant-numeric: tabular-nums; }
+.lista-contas li[data-nivel="atencao"] .conta-detalhe { color: var(--cor-alerta); }
+.conta-auto { font-size: 0.8rem; color: var(--cor-texto-suave); white-space: nowrap; }
+
+/* ---------- Configurações ---------- */
+.linha .campo-dia { flex: 0 0 96px; }
+.item.pausada { opacity: 0.55; }
+#form-renda .detalhe { margin: 0 0 12px; }
+.dialogo .detalhe { margin-bottom: 12px; }

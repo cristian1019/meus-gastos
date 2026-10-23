@@ -1,12 +1,21 @@
 /* =========================================================
-   inicio.js — tela Início: o resumo do mês atual.
+   inicio.js — tela Início: o resumo do período atual.
 
    Nada aqui busca dados: tudo é calculado a partir do "estado"
-   pelas funções de utils.js (calcularOrcamento, calcularMeta).
+   pelas funções de utils.js (periodo, calcularSaldo,
+   calcularOrcamento, calcularMeta).
    ========================================================= */
 
 const inicioEl = {
   mes: document.getElementById('inicio-mes'),
+  intervalo: document.getElementById('inicio-intervalo'),
+
+  caixaSaldo: document.getElementById('inicio-saldo'),
+  semRenda: document.getElementById('inicio-sem-renda'),
+  livre: document.getElementById('saldo-livre'),
+  barraSaldo: document.getElementById('saldo-barra'),
+  contaSaldo: document.getElementById('saldo-conta'),
+
   caixaOrcamento: document.getElementById('inicio-orcamento'),
   semOrcamento: document.getElementById('inicio-sem-orcamento'),
   restante: document.getElementById('orcamento-restante'),
@@ -25,13 +34,18 @@ const inicioEl = {
 const QUANTIDADE_ULTIMOS = 5;
 
 function desenharInicio() {
-  const mes = mesDaData(hojeISO());
-  const orc = calcularOrcamento(estado.gastos, estado.categorias, mes);
+  const chave = periodo(hojeISO());
+  const orc = calcularOrcamento(estado.gastos, estado.categorias, chave);
+  const pendentes = contasPendentesDoPeriodo(chave);
+  const guardar = totalGuardarEsteMes();
 
-  inicioEl.mes.textContent = nomeDoMes(mes);
+  inicioEl.mes.textContent = nomeDoMes(chave);
+  inicioEl.intervalo.textContent = textoDoIntervalo(chave);
   inicioEl.total.textContent = formatarCentavos(orc.totalMes);
-  inicioEl.guardar.textContent = formatarCentavos(totalGuardarEsteMes());
+  inicioEl.guardar.textContent = formatarCentavos(guardar);
 
+  desenharSaldo(chave, orc.totalMes, pendentes, guardar);
+  desenharContasPendentes(pendentes);
   desenharOrcamento(orc);
   desenharAlertas(orc);
   desenharPorCategoria(orc);
@@ -40,7 +54,52 @@ function desenharInicio() {
   inicioEl.ultimosVazio.hidden = estado.gastos.length > 0;
 }
 
-// ---------- Cartão do orçamento ----------
+// ---------- "Ainda pode gastar" ----------
+function desenharSaldo(chave, gastosDoPeriodo, pendentes, guardar) {
+  const extras = somarValores(estado.entradas.filter((e) => periodo(e.data) === chave));
+  const temRenda = Boolean(estado.config.renda_fixa) || extras > 0;
+  inicioEl.caixaSaldo.hidden = !temRenda;
+  inicioEl.semRenda.hidden = temRenda;
+  desenharExtras(chave);
+  if (!temRenda) return;
+
+  const saldo = calcularSaldo({
+    rendaFixa: estado.config.renda_fixa,
+    extras,
+    gastos: gastosDoPeriodo,
+    contasACair: pendentes.reduce((t, p) => t + p.rec.valor, 0),
+    guardarMetas: guardar,
+  });
+
+  inicioEl.caixaSaldo.dataset.nivel = nivelDoLimite(saldo.proporcao);
+  inicioEl.livre.textContent = saldo.livre >= 0
+    ? formatarCentavos(saldo.livre)
+    : `Passou ${formatarCentavos(-saldo.livre)}`;
+
+  const porcentagem = Math.min(100, Math.round(saldo.proporcao * 100));
+  inicioEl.barraSaldo.setAttribute('aria-valuenow', porcentagem);
+  inicioEl.barraSaldo.querySelector('.barra-preenchida').style.width = porcentagem + '%';
+
+  // A conta, linha por linha, para ficar claro de onde veio o número
+  const linhas = [['Renda fixa', saldo.rendaFixa, '']];
+  if (saldo.extras) linhas.push(['Extras', saldo.extras, '+']);
+  linhas.push(['Gastos do período', saldo.gastos, '−']);
+  if (saldo.contasACair) linhas.push(['Contas fixas a cair', saldo.contasACair, '−']);
+  if (saldo.guardarMetas) linhas.push(['Guardar para metas', saldo.guardarMetas, '−']);
+
+  inicioEl.contaSaldo.replaceChildren();
+  linhas.forEach(([rotulo, valor, sinal]) => {
+    const li = document.createElement('li');
+    const nome = document.createElement('span');
+    nome.textContent = rotulo;
+    const numero = document.createElement('span');
+    numero.textContent = `${sinal} ${formatarCentavos(valor)}`.trim();
+    li.append(nome, numero);
+    inicioEl.contaSaldo.append(li);
+  });
+}
+
+// ---------- Cartão dos limites das categorias ----------
 function desenharOrcamento(orc) {
   const temOrcamento = orc.orcamento > 0;
   inicioEl.caixaOrcamento.hidden = !temOrcamento;

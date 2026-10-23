@@ -41,7 +41,7 @@ const formatadorCompacto = new Intl.NumberFormat('pt-BR', {
 });
 
 function iniciarRelatorios() {
-  relEl.mes.value = mesDaData(hojeISO());
+  relEl.mes.value = periodo(hojeISO());
   relEl.mes.addEventListener('change', desenharRelatorios);
   relEl.botaoDicas.addEventListener('click', aoGerarDicas);
   // Trocou entre claro/escuro com a tela aberta? Redesenha com as cores novas
@@ -63,19 +63,20 @@ function coresDoTema() {
 }
 
 function desenharRelatorios() {
-  const mes = relEl.mes.value || mesDaData(hojeISO());
+  const mes = relEl.mes.value || periodo(hojeISO());
   const orc = calcularOrcamento(estado.gastos, estado.categorias, mes);
 
   // Fatias: só categorias com gasto, da maior para a menor
   const fatias = orc.linhas.filter((l) => l.gasto > 0).sort((a, b) => b.gasto - a.gasto);
   relEl.total.textContent = formatarCentavos(orc.totalMes);
+  document.getElementById('relatorio-intervalo').textContent = `Período: ${textoDoIntervalo(mes)}`;
   relEl.vazio.hidden = fatias.length > 0;
 
   desenharLegenda(fatias, orc.totalMes);
 
   const meses = ultimosMeses(mes, MESES_NO_GRAFICO);
   const totais = meses.map((m) =>
-    somarValores(estado.gastos.filter((g) => mesDaData(g.data) === m)));
+    somarValores(estado.gastos.filter((g) => periodo(g.data) === m)));
   desenharComparacao(mes, totais);
 
   if (!window.Chart) {
@@ -207,19 +208,27 @@ function montarResumoParaIA(mes) {
   const gastoAnterior = Object.fromEntries(orcAnterior.linhas.map((l) => [l.categoria.id, l.gasto]));
 
   const hoje = hojeISO();
-  const [ano, m] = mes.split('-').map(Number);
-  const diasNoMes = new Date(ano, m, 0).getDate();
-  const emAndamento = mesDaData(hoje) === mes;
+  const emAndamento = periodo(hoje) === mes;
+  const entradasDoMes = estado.entradas.filter((e) => periodo(e.data) === mes);
+  const rendaFixa = estado.config.renda_fixa || 0;
+  const extras = somarValores(entradasDoMes);
 
   const variacao = orcAnterior.totalMes > 0
     ? Math.round(((orc.totalMes - orcAnterior.totalMes) / orcAnterior.totalMes) * 100)
     : null;
 
   const resumo = {
-    mes: nomeDoMes(mes),
+    mes: `${nomeDoMes(mes)} (${textoDoIntervalo(mes)}, o mês começa no dia do salário)`,
     situacao: emAndamento
-      ? `mês em andamento: dia ${Number(hoje.slice(8))} de ${diasNoMes}`
-      : 'mês encerrado',
+      ? `período em andamento, hoje é ${formatarData(hoje)}`
+      : 'período encerrado',
+    renda: rendaFixa + extras > 0 ? {
+      renda_fixa: formatarCentavos(rendaFixa),
+      extras: formatarCentavos(extras),
+      renda_total: formatarCentavos(rendaFixa + extras),
+      [rendaFixa + extras - orc.totalMes >= 0 ? 'sobra_apos_gastos' : 'gastos_passaram_da_renda_em']:
+        formatarCentavos(Math.abs(rendaFixa + extras - orc.totalMes)),
+    } : 'renda não informada',
     total_gasto: formatarCentavos(orc.totalMes),
     total_mes_anterior: formatarCentavos(orcAnterior.totalMes),
     variacao_em_relacao_ao_mes_anterior: variacao === null ? 'sem dados do mês anterior' : `${variacao > 0 ? '+' : ''}${variacao}%`,
@@ -242,7 +251,7 @@ function montarResumoParaIA(mes) {
         ...(l.limite ? { percentual_do_limite: formatarPorcentagem(l.proporcao) } : {}),
       })),
     maiores_gastos: estado.gastos
-      .filter((g) => mesDaData(g.data) === mes)
+      .filter((g) => periodo(g.data) === mes)
       .sort((a, b) => b.valor - a.valor)
       .slice(0, 3)
       .map((g) => ({ descricao: g.descricao, valor: formatarCentavos(g.valor), categoria: buscarCategoria(g.categoria_id).nome })),
@@ -250,7 +259,9 @@ function montarResumoParaIA(mes) {
       const calc = calcularMeta(meta);
       return {
         descricao: meta.descricao,
-        vence: formatarData(meta.data_vencimento),
+        tipo: meta.tipo === 'economia' ? 'economia (reserva)' : 'conta a pagar',
+        // Economia pode não ter prazo
+        vence: meta.data_vencimento ? formatarData(meta.data_vencimento) : 'sem prazo',
         falta_guardar: formatarCentavos(calc.restante),
         guardar_este_mes: formatarCentavos(calc.faltaEsteMes),
         ...(calc.atrasada ? { atrasada: 'sim' } : {}),
@@ -318,8 +329,8 @@ function exibirDicas(dicas) {
 }
 
 async function aoGerarDicas() {
-  const mes = relEl.mes.value || mesDaData(hojeISO());
-  const doMes = estado.gastos.filter((g) => mesDaData(g.data) === mes);
+  const mes = relEl.mes.value || periodo(hojeISO());
+  const doMes = estado.gastos.filter((g) => periodo(g.data) === mes);
   if (doMes.length === 0) {
     relEl.dicasStatus.className = 'mensagem erro';
     relEl.dicasStatus.textContent = 'Sem gastos neste mês: não há o que analisar.';
