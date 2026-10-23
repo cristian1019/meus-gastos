@@ -4,19 +4,26 @@
    no armazenamento. Isso facilita testar e reaproveitar.
    ========================================================= */
 
-/* Categorias iniciais. Na Etapa 2 elas vão para a tabela
-   "categorias" do Supabase, e cada usuário poderá editar as suas. */
+/* Categorias criadas automaticamente no primeiro acesso.
+   Desde a Etapa 4 elas moram na tabela "categorias" do banco, e você
+   pode editar, criar e excluir na tela Configurações.
+   "chave" só serve para converter os gastos antigos (Etapa 1), que
+   guardavam a categoria como texto. */
 const CATEGORIAS_PADRAO = [
-  { id: 'alimentacao', nome: 'Alimentação', icone: '🍽️' },
-  { id: 'mercado',     nome: 'Mercado',     icone: '🛒' },
-  { id: 'transporte',  nome: 'Transporte',  icone: '⛽' },
-  { id: 'moradia',     nome: 'Moradia',     icone: '🏠' },
-  { id: 'saude',       nome: 'Saúde',       icone: '💊' },
-  { id: 'educacao',    nome: 'Educação',    icone: '🎓' },
-  { id: 'lazer',       nome: 'Lazer',       icone: '🎮' },
-  { id: 'contas',      nome: 'Contas',      icone: '🧾' },
-  { id: 'outros',      nome: 'Outros',      icone: '📦' },
+  { chave: 'alimentacao', nome: 'Alimentação', icone: '🍽️', cor: '#f97316', ordem: 1 },
+  { chave: 'mercado',     nome: 'Mercado',     icone: '🛒', cor: '#22c55e', ordem: 2 },
+  { chave: 'transporte',  nome: 'Transporte',  icone: '⛽', cor: '#3b82f6', ordem: 3 },
+  { chave: 'moradia',     nome: 'Moradia',     icone: '🏠', cor: '#a855f7', ordem: 4 },
+  { chave: 'saude',       nome: 'Saúde',       icone: '💊', cor: '#ef4444', ordem: 5 },
+  { chave: 'educacao',    nome: 'Educação',    icone: '🎓', cor: '#eab308', ordem: 6 },
+  { chave: 'lazer',       nome: 'Lazer',       icone: '🎮', cor: '#ec4899', ordem: 7 },
+  { chave: 'contas',      nome: 'Contas',      icone: '🧾', cor: '#14b8a6', ordem: 8 },
+  { chave: 'outros',      nome: 'Outros',      icone: '📦', cor: '#64748b', ordem: 9 },
 ];
+
+/* Orçamento: a partir de quanto do limite a categoria vira alerta */
+const ALERTA_ATENCAO = 0.8; // 80% → amarelo
+const ALERTA_ESTOUROU = 1;  // 100% → vermelho
 
 const NOMES_PAGAMENTO = {
   pix: 'Pix',
@@ -108,10 +115,6 @@ function gerarId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
-function buscarCategoria(id) {
-  return CATEGORIAS_PADRAO.find((c) => c.id === id)
-    || { id, nome: id, icone: '❔' };
-}
 
 /** Soma o campo "valor" (em centavos) de uma lista. */
 function somarValores(lista) {
@@ -179,5 +182,98 @@ function calcularMeta(meta, hoje = hojeISO()) {
     guardadoEsteMes,
     faltaEsteMes,
     atrasada,
+  };
+}
+
+/* =========================================================
+   MESES — sempre no formato "AAAA-MM"
+   ========================================================= */
+
+/** "2026-10" + 2 → "2026-12";  "2026-01" + (-1) → "2025-12" */
+function somarMeses(mes, quantidade) {
+  const [ano, m] = mes.split('-').map(Number);
+  const total = ano * 12 + (m - 1) + quantidade; // conta tudo em meses
+  const novoAno = Math.floor(total / 12);
+  const novoMes = (total % 12) + 1;
+  return `${novoAno}-${String(novoMes).padStart(2, '0')}`;
+}
+
+/** Os últimos N meses terminando em "mes", do mais antigo ao mais novo. */
+function ultimosMeses(mes, n) {
+  return Array.from({ length: n }, (_, i) => somarMeses(mes, i - (n - 1)));
+}
+
+const NOMES_MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+/** "2026-10" → "outubro de 2026"  |  curto: "out/26" */
+function nomeDoMes(mes, curto = false) {
+  const [ano, m] = mes.split('-').map(Number);
+  const nome = NOMES_MESES[m - 1];
+  return curto ? `${nome.slice(0, 3)}/${String(ano).slice(2)}` : `${nome} de ${ano}`;
+}
+
+/** Porcentagem inteira para mostrar: 0.856 → "86%" */
+function formatarPorcentagem(proporcao) {
+  // Algo entre 0 e 0,5% arredondaria para "0%", o que parece "nada"
+  if (proporcao > 0 && proporcao < 0.005) return '<1%';
+  return Math.round(proporcao * 100) + '%';
+}
+
+/* =========================================================
+   ORÇAMENTO — quanto já foi gasto do limite de cada categoria.
+
+   Regras:
+   - Só categorias COM limite entram no orçamento.
+   - Orçamento do mês = soma dos limites.
+   - Restante = orçamento − gastos (do mês) nessas categorias.
+     Pode ficar negativo: significa que passou do orçamento.
+   - Gastos em categorias sem limite aparecem à parte
+     ("fora do orçamento"), para não esconder nada.
+   ========================================================= */
+function nivelDoLimite(proporcao) {
+  if (proporcao >= ALERTA_ESTOUROU) return 'estourou';
+  if (proporcao >= ALERTA_ATENCAO) return 'atencao';
+  return 'ok';
+}
+
+function calcularOrcamento(gastos, categorias, mes) {
+  const doMes = gastos.filter((g) => mesDaData(g.data) === mes);
+
+  // Soma por categoria numa passada só: { idDaCategoria: centavos }
+  const porCategoria = {};
+  doMes.forEach((g) => {
+    porCategoria[g.categoria_id] = (porCategoria[g.categoria_id] || 0) + g.valor;
+  });
+
+  const linhas = categorias.map((cat) => {
+    const gasto = porCategoria[cat.id] || 0;
+    const limite = cat.limite_mensal;
+    const proporcao = limite ? gasto / limite : null;
+    return {
+      categoria: cat,
+      gasto,
+      limite,
+      proporcao,
+      nivel: limite ? nivelDoLimite(proporcao) : null,
+    };
+  });
+
+  const comLimite = linhas.filter((l) => l.limite);
+  const orcamento = comLimite.reduce((t, l) => t + l.limite, 0);
+  const gastoNoOrcamento = comLimite.reduce((t, l) => t + l.gasto, 0);
+  const totalMes = somarValores(doMes);
+
+  return {
+    linhas,
+    totalMes,
+    orcamento,                                  // 0 = nenhum limite definido
+    gastoNoOrcamento,
+    restante: orcamento - gastoNoOrcamento,
+    foraDoOrcamento: totalMes - gastoNoOrcamento,
+    proporcao: orcamento ? gastoNoOrcamento / orcamento : null,
+    alertas: comLimite
+      .filter((l) => l.nivel !== 'ok')
+      .sort((a, b) => b.proporcao - a.proporcao),
   };
 }

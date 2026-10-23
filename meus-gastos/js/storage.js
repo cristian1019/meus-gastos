@@ -28,7 +28,7 @@ function verificar({ data, error }) {
 }
 
 // Escolher as colunas (em vez de '*') evita trazer dados que não usamos.
-const COLUNAS_GASTO = 'id, valor, descricao, categoria, data, forma_pagamento, criado_em';
+const COLUNAS_GASTO = 'id, valor, descricao, categoria_id, data, forma_pagamento, criado_em';
 
 /* ------------------------- GASTOS ------------------------- */
 
@@ -48,7 +48,7 @@ async function salvarGasto(gasto) {
   const campos = {
     valor: gasto.valor,
     descricao: gasto.descricao,
-    categoria: gasto.categoria,
+    categoria_id: gasto.categoria_id,
     data: gasto.data,
     forma_pagamento: gasto.forma_pagamento,
   };
@@ -65,6 +65,57 @@ async function excluirGasto(id) {
   verificar(await db.from('gastos').delete().eq('id', id));
 }
 
+/** Passa todos os gastos de uma categoria para outra (antes de excluir). */
+async function moverGastosDeCategoria(deId, paraId) {
+  verificar(await db.from('gastos').update({ categoria_id: paraId }).eq('categoria_id', deId));
+}
+
+/* ----------------------- CATEGORIAS ----------------------- */
+const COLUNAS_CATEGORIA = 'id, nome, icone, cor, limite_mensal, ordem';
+
+async function listarCategorias() {
+  return verificar(
+    await db
+      .from('categorias')
+      .select(COLUNAS_CATEGORIA)
+      .order('ordem', { ascending: true })
+      .order('nome', { ascending: true })
+  );
+}
+
+/**
+ * Primeiro acesso de uma conta nova: cria as categorias padrão.
+ * "upsert" com ignoreDuplicates = "insira, e se já existir uma com
+ * o mesmo nome, deixe quieto". Assim, se dois aparelhos abrirem o
+ * app ao mesmo tempo, não aparecem categorias repetidas.
+ */
+async function criarCategoriasPadrao() {
+  const linhas = CATEGORIAS_PADRAO.map(({ nome, icone, cor, ordem }) => ({ nome, icone, cor, ordem }));
+  verificar(
+    await db.from('categorias').upsert(linhas, { onConflict: 'user_id,nome', ignoreDuplicates: true })
+  );
+}
+
+/** Cria (sem id) ou atualiza (com id) uma categoria. */
+async function salvarCategoria(cat) {
+  const campos = {
+    nome: cat.nome,
+    icone: cat.icone,
+    cor: cat.cor,
+    limite_mensal: cat.limite_mensal,
+  };
+  if (!cat.id) campos.ordem = cat.ordem;
+
+  const consulta = cat.id
+    ? db.from('categorias').update(campos).eq('id', cat.id)
+    : db.from('categorias').insert(campos);
+  return verificar(await consulta.select(COLUNAS_CATEGORIA).single());
+}
+
+async function excluirCategoria(id) {
+  verificar(await db.from('categorias').delete().eq('id', id));
+}
+
 /* ------------- MIGRAÇÃO: dados da Etapa 1 ---------------- */
 const CHAVE_ANTIGA = 'meus-gastos:v1';
 
@@ -78,16 +129,27 @@ function gastosDoAparelho() {
   }
 }
 
-/** Envia os gastos do aparelho para a nuvem, todos de uma vez. */
-async function importarGastosDoAparelho() {
+/**
+ * Envia os gastos do aparelho para a nuvem, todos de uma vez.
+ * Os gastos antigos guardavam a categoria como texto ("mercado");
+ * aqui convertemos para o id da categoria de mesmo nome no banco.
+ */
+async function importarGastosDoAparelho(categorias) {
   const antigos = gastosDoAparelho();
   if (antigos.length === 0) return 0;
+
+  const idPorNome = Object.fromEntries(categorias.map((c) => [c.nome, c.id]));
+  const reserva = idPorNome['Outros'] || categorias[0].id;
+  const idDaChave = (chave) => {
+    const padrao = CATEGORIAS_PADRAO.find((c) => c.chave === chave);
+    return (padrao && idPorNome[padrao.nome]) || reserva;
+  };
 
   // Não mandamos o id antigo: o banco gera um novo.
   const linhas = antigos.map((g) => ({
     valor: g.valor,
     descricao: g.descricao,
-    categoria: g.categoria,
+    categoria_id: idDaChave(g.categoria),
     data: g.data,
     forma_pagamento: g.forma_pagamento,
     criado_em: g.criado_em,
@@ -104,26 +166,51 @@ async function importarGastosDoAparelho() {
 
 /**
  * Metas ativas, já com os depósitos de cada uma.
- * 'depositos_meta(valor, data)' faz um "join": o Supabase usa a
+ * 'depositos_meta(id, valor, data)' faz um "join": o Supabase usa a
  * chave estrangeira para trazer os depósitos dentro de cada meta.
  */
 async function listarProgramados() {
-  return verificar(
+  const metas = verificar(
     await db
       .from('gastos_programados')
-      .select('id, descricao, valor_total, data_vencimento, valor_guardado, incluir_mes_vencimento, status, depositos_meta(valor, data)')
+      .select('id, descricao, valor_total, data_vencimento, valor_guardado, incluir_mes_vencimento, recorrencia, categoria_id, status, depositos_meta(id, valor, data, criado_em)')
       .eq('status', 'ativo')
       .order('data_vencimento', { ascending: true })
   );
+  // Depósitos do mais novo para o mais antigo (para o histórico)
+  metas.forEach((m) => m.depositos_meta.sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1)));
+  return metas;
 }
 
-async function criarProgramado(meta) {
-  verificar(
-    await db.from('gastos_programados').insert({
-      descricao: meta.descricao,
-      valor_total: meta.valor_total,
-      data_vencimento: meta.data_vencimento,
-      incluir_mes_vencimento: meta.incluir_mes_vencimento,
+/** Cria (sem id) ou edita (com id) uma meta. */
+async function salvarProgramado(meta) {
+  const campos = {
+    descricao: meta.descricao,
+    valor_total: meta.valor_total,
+    data_vencimento: meta.data_vencimento,
+    incluir_mes_vencimento: meta.incluir_mes_vencimento,
+    recorrencia: meta.recorrencia,
+    categoria_id: meta.categoria_id,
+  };
+  const consulta = meta.id
+    ? db.from('gastos_programados').update(campos).eq('id', meta.id)
+    : db.from('gastos_programados').insert(campos);
+  verificar(await consulta);
+}
+
+/**
+ * "Paguei": chama a função do banco que, numa transação só, lança o
+ * gasto real, marca a meta como paga e cria a próxima (se recorrente).
+ * .rpc() = "remote procedure call", chamar uma função do banco.
+ */
+async function pagarProgramado(metaId, pagamento) {
+  return verificar(
+    await db.rpc('pagar_gasto_programado', {
+      p_meta_id: metaId,
+      p_valor: pagamento.valor,
+      p_data: pagamento.data,
+      p_forma_pagamento: pagamento.forma_pagamento,
+      p_categoria_id: pagamento.categoria_id,
     })
   );
 }
@@ -143,6 +230,11 @@ async function registrarDeposito(metaId, valor) {
   );
 }
 
+/** Desfaz um "Guardei". O gatilho do banco recalcula o total guardado. */
+async function excluirDeposito(id) {
+  verificar(await db.from('depositos_meta').delete().eq('id', id));
+}
+
 async function excluirProgramado(id) {
   // Os depósitos somem junto (on delete cascade no SQL)
   verificar(await db.from('gastos_programados').delete().eq('id', id));
@@ -157,9 +249,21 @@ async function excluirProgramado(id) {
  * o app só preenche o formulário para você conferir.
  */
 async function interpretarComIA({ texto, imagem }) {
-  const { data, error } = await db.functions.invoke('ler-gasto', {
-    body: { texto, imagem },
-  });
+  return chamarFuncaoIA({ texto, imagem });
+}
+
+/**
+ * Pede à IA um texto de dicas sobre o mês. O "resumo" já vem com
+ * todos os números calculados pelo app: a IA só escreve.
+ * Devolve { dicas: { resumo, dicas: [...] }, usos_restantes }.
+ */
+async function gerarDicasComIA(resumo) {
+  return chamarFuncaoIA({ tipo: 'dicas', resumo });
+}
+
+/** Chamada comum às duas funções acima (mesma Edge Function). */
+async function chamarFuncaoIA(corpo) {
+  const { data, error } = await db.functions.invoke('ler-gasto', { body: corpo });
 
   if (error) {
     // Quando a função responde com erro (400, 429...), a mensagem

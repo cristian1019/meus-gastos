@@ -88,7 +88,7 @@ async function pedirParaIA(pedido, mensagemEspera) {
 function preencherFormulario(gasto) {
   if (gasto.valor !== null) el.valor.value = centavosParaTexto(gasto.valor);
   el.descricao.value = gasto.descricao;
-  el.categoria.value = gasto.categoria;
+  el.categoria.value = gasto.categoria_id;
   el.data.value = gasto.data;
   // Se a IA não soube a forma de pagamento, mantém a que estava
   if (gasto.forma_pagamento) el.pagamento.value = gasto.forma_pagamento;

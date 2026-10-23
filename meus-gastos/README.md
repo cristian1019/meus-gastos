@@ -2,32 +2,36 @@
 
 App de controle de gastos pessoais, instalável no iPhone como PWA. Projeto de estudo e portfólio.
 
-**Etapa atual: 3 (IA).** Digite "posto 150" ou fotografe o cupom, e a IA preenche o gasto para você conferir.
+**Etapa atual: 4 (relatórios e orçamento).** Tela Início com orçamento e alertas, gráficos por categoria e por mês, dicas da IA, categorias editáveis com limite e gastos programados completos (Paguei, recorrência, histórico).
 
-👉 Guias: **[Etapa 2 — colocar no ar](GUIA-ETAPA2.md)** · **[Etapa 3 — ligar a IA](GUIA-ETAPA3.md)**
+👉 Guias: **[Etapa 2 — colocar no ar](GUIA-ETAPA2.md)** · **[Etapa 3 — ligar a IA](GUIA-ETAPA3.md)** · **[Etapa 4 — orçamento e relatórios](GUIA-ETAPA4.md)**
 
 ## Estrutura
 
 ```
 meus-gastos/
-├── index.html            → telas: login, novo gasto, lista, metas
+├── index.html            → telas: login, início, novo, lista, relatórios, metas, configurações
 ├── manifest.webmanifest  → "carteira de identidade" do app (nome, ícone, cor)
 ├── sw.js                 → service worker: faz o app abrir mesmo sem internet
 ├── css/style.css         → aparência (claro/escuro, pensado para iPhone)
 ├── icones/               → ícones do app em vários tamanhos
 ├── sql/
 │   ├── 01_tabelas.sql    → tabelas e regras de segurança do banco
-│   └── 02_limite_ia.sql  → contador de usos da IA por dia
+│   ├── 02_limite_ia.sql  → contador de usos da IA por dia
+│   └── 03_etapa4.sql     → categorias, migração dos gastos, função "Paguei"
 ├── supabase/functions/ler-gasto/index.ts
 │                         → servidor da IA (roda no Supabase, guarda a chave)
 └── js/
     ├── config.js   → endereço e chave pública do SEU Supabase
-    ├── utils.js    → dinheiro, datas, categorias e o cálculo das metas
-    ├── storage.js  → única parte que fala com o banco (e com a função da IA)
-    ├── auth.js     → entrar, criar conta, sair
-    ├── metas.js    → tela de gastos programados
-    ├── ia.js       → caixa "Preencher" e foto do cupom
-    └── app.js      → o "maestro": liga tudo
+    ├── utils.js       → dinheiro, datas, meses, orçamento e cálculo das metas
+    ├── storage.js     → única parte que fala com o banco (e com a função da IA)
+    ├── auth.js        → entrar, criar conta, sair
+    ├── inicio.js      → tela Início (orçamento, alertas, últimos gastos)
+    ├── metas.js       → gastos programados (criar, editar, guardar, pagar)
+    ├── relatorios.js  → gráficos e dicas da IA
+    ├── categorias.js  → Configurações: categorias e limites
+    ├── ia.js          → caixa "Preencher" e foto do cupom
+    └── app.js         → o "maestro": login, dados, navegação, lista
 ```
 
 ## Decisões da Etapa 1 (continuam valendo)
@@ -116,8 +120,47 @@ A foto do iPhone (~4000×3000, vários MB) é redesenhada num `<canvas>` com no 
 ### Modelo
 `gemini-3.5-flash-lite`: um dos modelos que o Google recomenda para projetos novos, lê imagens e tem cota grátis. Para trocar, mude a constante `MODELO` no `index.ts`.
 
-## Próxima etapa (4): Relatórios
-- Gráfico de pizza por categoria e de barras por mês (Chart.js)
-- Orçamento e alertas por categoria
-- Gastos programados completos: recorrência e botão "Paguei"
-- Texto da IA com dicas sobre o mês
+## Decisões da Etapa 4
+
+### Categorias no banco, com ligação COMPOSTA
+Antes, cada gasto guardava a categoria como texto (`"mercado"`). Agora existe a tabela `categorias`, e o gasto guarda o **id** dela (`categoria_id`). Renomear "Educação" para "Faculdade" muda em um lugar só, e o app inteiro acompanha.
+
+Os testes encontraram uma falha na primeira versão: uma chave estrangeira simples só confere se a categoria **existe**, não **de quem** ela é. O usuário A conseguia ligar um gasto dele a uma categoria do usuário B. A solução foi uma chave estrangeira **composta**:
+
+```sql
+foreign key (categoria_id, user_id) references categorias (id, user_id)
+```
+
+Agora o banco exige que gasto e categoria tenham o **mesmo dono**. Lição: RLS protege as *linhas*, mas as *ligações* entre tabelas precisam de atenção própria.
+
+- `on delete restrict` nos gastos: o banco não deixa apagar uma categoria com gastos. O app move os gastos para "Outros" antes.
+- `on delete set null (categoria_id)` nas metas: a meta continua, só fica sem categoria. O `(categoria_id)` diz para limpar *só* essa coluna, e não o `user_id` junto (recurso do Postgres 15+).
+
+### "Paguei" é uma transação no banco
+Pagar uma meta são 3 passos: lançar o gasto, marcar a meta como paga e criar a próxima (se repetir). Se o app fizesse 3 pedidos e a internet caísse no meio, sobraria um gasto lançado com a meta ainda "ativa". A função `pagar_gasto_programado()` faz tudo numa **transação**: ou acontece tudo, ou nada.
+- `for update` trava a meta durante o pagamento: dois toques rápidos em "Confirmar" não pagam duas vezes.
+- `security invoker`: a função roda **como você**, então o RLS continua valendo.
+- A próxima data usa a regra do Postgres: 31/01 + 1 mês = 28/02. O app mostra a mesma data antes de você confirmar (testado, inclusive em ano bissexto).
+
+### Orçamento: regras (todas no código)
+- Só categorias **com limite** entram. Orçamento do mês = soma dos limites.
+- Restante = orçamento − gastos dessas categorias no mês. Pode ficar negativo ("Passou R$ X").
+- Gastos em categorias **sem limite** aparecem à parte ("mais R$ X em categorias sem limite"), para não esconder nada.
+- Alertas: **80%** do limite = atenção (amarelo); **100%** = passou (vermelho). Os números ficam em `ALERTA_ATENCAO` e `ALERTA_ESTOUROU`, no `utils.js`.
+- O JavaScript só marca `data-nivel="atencao"`; quem escolhe a cor é o CSS.
+
+### Dicas da IA: o código calcula, a IA escreve
+O app monta um **resumo** com todos os números já prontos e formatados (`"R$ 420,00"`, `"84%"`) e manda para a Edge Function. A instrução para a IA diz: *use só esses números, copie como estão, nunca calcule*. A resposta passa por conferência (no máximo 4 dicas, tamanho limitado) e aparece na tela com `textContent`.
+
+As dicas ficam guardadas **neste aparelho** (localStorage), por mês: reabrir a tela não gasta outro uso da IA. Se os gastos mudarem, o app avisa que dá para gerar de novo, mas não chama a IA sozinho.
+
+### Gráficos com Chart.js 4.5.1 (versão fixa)
+O endereço do script tem a versão exata. Assim, uma atualização da biblioteca nunca muda o app sem você saber. As cores vêm das próprias categorias e do tema (claro ou escuro), lidas das variáveis do CSS. A legenda é uma **lista HTML**, e não só o desenho: dá para ler os valores exatos, e leitores de tela conseguem ler.
+
+### Janelas com `<dialog>`
+Criar meta, pagar e editar categoria usam o `<dialog>` nativo do navegador: `showModal()` abre por cima, escurece o fundo e o gesto de voltar fecha. Sem biblioteca nenhuma.
+
+## Próxima etapa (5): Extras
+- Exportar gastos em CSV ou Excel
+- Gastos recorrentes (contas fixas que se lançam sozinhas)
+- Metas de economia (reserva sem conta específica)

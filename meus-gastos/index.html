@@ -56,15 +56,64 @@
         <h1>Meus Gastos</h1>
         <p class="topo-total">Total do mês: <strong id="total-mes">R$ 0,00</strong></p>
       </div>
-      <button type="button" id="botao-sair" class="botao-sair">Sair</button>
+      <button type="button" id="botao-config" class="botao-topo" aria-label="Configurações">⚙️</button>
     </header>
 
     <!-- Avisos gerais (erro de conexão, sucesso ao importar etc.) -->
     <div id="aviso" class="aviso" role="status" hidden></div>
 
     <main>
+      <!-- ---------- TELA: INÍCIO ---------- -->
+      <section id="tela-inicio" class="tela ativa" aria-labelledby="titulo-inicio">
+        <h2 id="titulo-inicio">Resumo de <span id="inicio-mes"></span></h2>
+
+        <!-- Orçamento: muda de texto e cor conforme o quanto já foi gasto -->
+        <div id="inicio-orcamento" class="cartao orcamento">
+          <p class="rotulo">Orçamento do mês</p>
+          <p class="numero-grande" id="orcamento-restante"></p>
+          <div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="orcamento-barra">
+            <div class="barra-preenchida"></div>
+          </div>
+          <p class="detalhe" id="orcamento-detalhe"></p>
+        </div>
+        <div id="inicio-sem-orcamento" class="cartao" hidden>
+          <p class="rotulo">Orçamento do mês</p>
+          <p class="detalhe">Defina um limite mensal nas categorias para acompanhar quanto ainda pode gastar.</p>
+          <button type="button" class="botao-secundario" data-ir="tela-config">Definir limites</button>
+        </div>
+
+        <div class="duas-colunas">
+          <button type="button" class="cartao tile" data-ir="tela-lista">
+            <span class="rotulo">Gasto no mês</span>
+            <strong id="inicio-total"></strong>
+          </button>
+          <button type="button" class="cartao tile" data-ir="tela-metas">
+            <span class="rotulo">Guardar este mês</span>
+            <strong id="inicio-guardar"></strong>
+          </button>
+        </div>
+
+        <div id="inicio-alertas" class="cartao alertas" hidden>
+          <p class="rotulo">Atenção</p>
+          <ul id="lista-alertas" class="lista-simples"></ul>
+        </div>
+
+        <div class="cartao" id="inicio-categorias-caixa">
+          <p class="rotulo">Por categoria</p>
+          <ul id="inicio-categorias" class="lista-categorias"></ul>
+          <p id="inicio-categorias-vazio" class="detalhe" hidden>Nenhum gasto neste mês ainda.</p>
+        </div>
+
+        <div class="titulo-secao">
+          <h3>Últimos gastos</h3>
+          <button type="button" class="link" data-ir="tela-lista">Ver todos</button>
+        </div>
+        <ul id="inicio-ultimos" class="lista lista-compacta"></ul>
+        <p id="inicio-ultimos-vazio" class="vazio" hidden>Nada por aqui ainda. Toque em ➕ Novo.</p>
+      </section>
+
       <!-- ---------- TELA: NOVO GASTO ---------- -->
-      <section id="tela-novo" class="tela ativa" aria-labelledby="titulo-novo">
+      <section id="tela-novo" class="tela" aria-labelledby="titulo-novo">
         <h2 id="titulo-novo">Novo gasto</h2>
 
         <!-- ===== IA: preenche o formulário abaixo; você confere e salva ===== -->
@@ -160,44 +209,204 @@
 
         <p class="resumo-filtro">Guardar este mês: <strong id="total-guardar-mes">R$ 0,00</strong></p>
 
-        <!-- <details> já abre e fecha sozinho, sem JavaScript -->
-        <details id="caixa-nova-meta" class="cartao">
-          <summary>➕ Nova meta</summary>
-          <form id="form-meta" novalidate>
-            <label>
-              O que vai pagar?
-              <input id="meta-descricao" type="text" placeholder="Ex.: Rematrícula" maxlength="80" required>
-            </label>
-            <div class="linha">
-              <label>
-                Valor total (R$)
-                <input id="meta-valor" type="text" inputmode="decimal" placeholder="0,00" required>
-              </label>
-              <label>
-                Vence em
-                <input id="meta-vencimento" type="date" required>
-              </label>
-            </div>
-            <label class="opcao">
-              <input id="meta-incluir-mes" type="checkbox">
-              Também guardar no mês do vencimento
-            </label>
-            <p id="erro-meta" class="mensagem erro" role="alert"></p>
-            <button type="submit" class="botao-principal">Criar meta</button>
-          </form>
-        </details>
+        <button type="button" id="botao-nova-meta" class="botao-secundario botao-adicionar">➕ Nova meta</button>
 
         <ul id="lista-metas" class="lista"></ul>
         <p id="metas-vazia" class="vazio" hidden>Nenhuma meta ainda. Que tal a próxima conta grande?</p>
       </section>
+
+      <!-- ---------- TELA: RELATÓRIOS ---------- -->
+      <section id="tela-relatorios" class="tela" aria-labelledby="titulo-relatorios">
+        <h2 id="titulo-relatorios">Relatórios</h2>
+
+        <div class="filtros cartao">
+          <label>
+            Mês
+            <input id="relatorio-mes" type="month">
+          </label>
+        </div>
+
+        <p id="relatorio-sem-grafico" class="mensagem erro" hidden>
+          Não consegui carregar os gráficos. Verifique a internet e abra a tela de novo.
+        </p>
+
+        <div class="cartao">
+          <p class="rotulo">Para onde foi o dinheiro</p>
+          <p class="numero-grande" id="relatorio-total"></p>
+          <div class="grafico grafico-pizza"><canvas id="grafico-pizza" aria-label="Gastos por categoria" role="img"></canvas></div>
+          <!-- A legenda é uma lista de verdade (e não só o desenho): dá para ler os valores exatos -->
+          <ul id="relatorio-legenda" class="lista-legenda"></ul>
+          <p id="relatorio-vazio" class="detalhe" hidden>Nenhum gasto neste mês.</p>
+        </div>
+
+        <div class="cartao">
+          <p class="rotulo">Últimos 6 meses</p>
+          <div class="grafico grafico-barras"><canvas id="grafico-barras" aria-label="Total gasto nos últimos 6 meses" role="img"></canvas></div>
+          <p class="detalhe" id="relatorio-comparacao"></p>
+        </div>
+
+        <div class="cartao" id="caixa-dicas">
+          <p class="rotulo">✨ Dicas da IA</p>
+          <div id="dicas-conteudo" hidden>
+            <p id="dicas-resumo"></p>
+            <ul id="dicas-lista" class="lista-dicas"></ul>
+            <p id="dicas-aviso" class="detalhe"></p>
+          </div>
+          <p id="dicas-status" class="mensagem info" role="status"></p>
+          <button type="button" id="botao-dicas" class="botao-secundario">Gerar dicas deste mês</button>
+          <p class="detalhe">Os números são calculados pelo app; a IA só escreve o texto. Usa 1 dos seus usos diários da IA.</p>
+        </div>
+      </section>
+
+      <!-- ---------- TELA: CONFIGURAÇÕES ---------- -->
+      <section id="tela-config" class="tela" aria-labelledby="titulo-config">
+        <h2 id="titulo-config">Configurações</h2>
+
+        <div class="titulo-secao">
+          <h3>Categorias e limites</h3>
+        </div>
+        <p class="detalhe" id="config-total-orcamento"></p>
+        <ul id="lista-config-categorias" class="lista"></ul>
+        <button type="button" id="botao-nova-categoria" class="botao-secundario botao-adicionar">➕ Nova categoria</button>
+
+        <div class="titulo-secao">
+          <h3>Conta</h3>
+        </div>
+        <div class="cartao">
+          <p class="detalhe">Conectado como <strong id="config-email"></strong></p>
+          <button type="button" id="botao-sair" class="botao-secundario botao-perigo">Sair da conta</button>
+        </div>
+      </section>
     </main>
 
     <nav class="navegacao">
-      <button type="button" data-tela="tela-novo" class="ativo">➕ Novo</button>
-      <button type="button" data-tela="tela-lista">📋 Lista</button>
-      <button type="button" data-tela="tela-metas">🎯 Metas</button>
+      <button type="button" data-tela="tela-inicio" class="ativo"><span aria-hidden="true">🏠</span>Início</button>
+      <button type="button" data-tela="tela-novo"><span aria-hidden="true">➕</span>Novo</button>
+      <button type="button" data-tela="tela-lista"><span aria-hidden="true">📋</span>Lista</button>
+      <button type="button" data-tela="tela-relatorios"><span aria-hidden="true">📊</span>Relatórios</button>
+      <button type="button" data-tela="tela-metas"><span aria-hidden="true">🎯</span>Metas</button>
     </nav>
   </div>
+
+  <!-- ===== Janelas (<dialog>) =====
+       <dialog> é uma janela nativa do navegador: showModal() abre por cima
+       de tudo, escurece o fundo e o botão "voltar"/Esc fecha. -->
+
+  <!-- Criar / editar meta -->
+  <dialog id="dialogo-meta" class="dialogo" aria-labelledby="dialogo-meta-titulo">
+    <form id="form-meta" novalidate>
+      <h2 id="dialogo-meta-titulo">Nova meta</h2>
+      <label>
+        O que vai pagar?
+        <input id="meta-descricao" type="text" placeholder="Ex.: Rematrícula" maxlength="80" required>
+      </label>
+      <div class="linha">
+        <label>
+          Valor total (R$)
+          <input id="meta-valor" type="text" inputmode="decimal" placeholder="0,00" required>
+        </label>
+        <label>
+          Vence em
+          <input id="meta-vencimento" type="date" required>
+        </label>
+      </div>
+      <div class="linha">
+        <label>
+          Categoria
+          <select id="meta-categoria"></select>
+        </label>
+        <label>
+          Repete
+          <select id="meta-recorrencia">
+            <option value="nenhuma">Não repete</option>
+            <option value="mensal">Todo mês</option>
+            <option value="anual">Todo ano</option>
+          </select>
+        </label>
+      </div>
+      <label class="opcao">
+        <input id="meta-incluir-mes" type="checkbox">
+        Também guardar no mês do vencimento
+      </label>
+      <p id="erro-meta" class="mensagem erro" role="alert"></p>
+      <div class="dialogo-botoes">
+        <button type="button" class="botao-secundario" data-fechar>Cancelar</button>
+        <button type="submit" id="meta-salvar" class="botao-principal">Criar meta</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Paguei -->
+  <dialog id="dialogo-pagar" class="dialogo" aria-labelledby="dialogo-pagar-titulo">
+    <form id="form-pagar" novalidate>
+      <h2 id="dialogo-pagar-titulo">Registrar pagamento</h2>
+      <p class="detalhe" id="pagar-info"></p>
+      <div class="linha">
+        <label>
+          Valor pago (R$)
+          <input id="pagar-valor" type="text" inputmode="decimal" required>
+        </label>
+        <label>
+          Data
+          <input id="pagar-data" type="date" required>
+        </label>
+      </div>
+      <div class="linha">
+        <label>
+          Categoria
+          <select id="pagar-categoria"></select>
+        </label>
+        <label>
+          Pagamento
+          <select id="pagar-forma">
+            <option value="pix">Pix</option>
+            <option value="debito">Débito</option>
+            <option value="credito">Crédito</option>
+            <option value="dinheiro">Dinheiro</option>
+            <option value="vale_refeicao">Vale-refeição</option>
+          </select>
+        </label>
+      </div>
+      <p class="detalhe" id="pagar-proxima"></p>
+      <p id="erro-pagar" class="mensagem erro" role="alert"></p>
+      <div class="dialogo-botoes">
+        <button type="button" class="botao-secundario" data-fechar>Cancelar</button>
+        <button type="submit" id="pagar-salvar" class="botao-principal">Confirmar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Criar / editar categoria -->
+  <dialog id="dialogo-categoria" class="dialogo" aria-labelledby="dialogo-categoria-titulo">
+    <form id="form-categoria" novalidate>
+      <h2 id="dialogo-categoria-titulo">Nova categoria</h2>
+      <div class="linha linha-icone">
+        <label class="campo-icone">
+          Ícone
+          <input id="categoria-icone" type="text" maxlength="8" placeholder="📦" autocomplete="off">
+        </label>
+        <label>
+          Nome
+          <input id="categoria-nome" type="text" maxlength="30" placeholder="Ex.: Pets" required>
+        </label>
+        <label class="campo-cor">
+          Cor
+          <input id="categoria-cor" type="color" value="#64748b">
+        </label>
+      </div>
+      <label>
+        Limite por mês (R$)
+        <input id="categoria-limite" type="text" inputmode="decimal" placeholder="Sem limite">
+      </label>
+      <p class="detalhe">Deixe o limite vazio para a categoria ficar fora do orçamento.</p>
+      <p id="erro-categoria" class="mensagem erro" role="alert"></p>
+      <div class="dialogo-botoes">
+        <button type="button" class="botao-secundario" data-fechar>Cancelar</button>
+        <button type="submit" id="categoria-salvar" class="botao-principal">Salvar</button>
+      </div>
+      <button type="button" id="categoria-excluir" class="link link-perigo" hidden>Excluir categoria</button>
+    </form>
+  </dialog>
 
   <!-- ===== Moldes (o JS copia e preenche) ===== -->
   <template id="molde-gasto">
@@ -223,6 +432,7 @@
         <span class="meta-descricao"></span>
         <span class="meta-vencimento"></span>
       </div>
+      <p class="meta-etiquetas"></p>
       <!-- role/aria-* fazem leitores de tela entenderem a barra -->
       <div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100">
         <div class="barra-preenchida"></div>
@@ -232,8 +442,28 @@
       <p class="meta-alerta" hidden></p>
       <div class="meta-acoes">
         <button type="button" class="acao-guardei botao-principal">Guardei</button>
-        <button type="button" class="acao-excluir-meta">Excluir</button>
+        <button type="button" class="acao-paguei botao-secundario">Paguei</button>
       </div>
+      <div class="meta-links">
+        <button type="button" class="link acao-editar-meta">Editar</button>
+        <button type="button" class="link link-perigo acao-excluir-meta">Excluir</button>
+      </div>
+      <!-- Histórico de depósitos ("Guardei"), com opção de desfazer -->
+      <details class="meta-depositos">
+        <summary></summary>
+        <ul class="lista-depositos"></ul>
+      </details>
+    </li>
+  </template>
+
+  <template id="molde-categoria">
+    <li class="item item-categoria">
+      <span class="item-icone"></span>
+      <div class="item-info">
+        <span class="item-descricao"></span>
+        <span class="item-detalhes"></span>
+      </div>
+      <button type="button" class="link acao-editar-categoria">Editar</button>
     </li>
   </template>
 
@@ -241,12 +471,18 @@
   <!-- Biblioteca oficial do Supabase. "@2" = sempre a última versão 2.x,
        que recebe correções sem quebrar o código. -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Gráficos. Versão FIXA (4.5.1): uma atualização da biblioteca nunca
+       muda o visual do app sem você saber. -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
   <script src="js/config.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/metas.js"></script>
   <script src="js/ia.js"></script>
+  <script src="js/inicio.js"></script>
+  <script src="js/relatorios.js"></script>
+  <script src="js/categorias.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
