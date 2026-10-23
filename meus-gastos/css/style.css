@@ -642,3 +642,21 @@ label.botao-foto.desativado { opacity: 0.5; pointer-events: none; }
 .item.pausada { opacity: 0.55; }
 #form-renda .detalhe { margin: 0 0 12px; }
 .dialogo .detalhe { margin-bottom: 12px; }
+
+/* Correção: os dois quadrinhos lado a lado do Início ("Gasto no mês" e
+   "Guardar este mês") são .cartao. A regra ".cartao + .cartao" dava
+   margem em cima do SEGUNDO, que descia em relação ao primeiro. */
+.duas-colunas > .cartao { margin-top: 0; }
+
+/* Faixa na área do relógio/bateria: ao rolar a tela, o conteúdo
+   não aparece mais por baixo dos ícones do iPhone. */
+body.logado::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top);
+  background: var(--cor-topo);
+  z-index: 20;
+}

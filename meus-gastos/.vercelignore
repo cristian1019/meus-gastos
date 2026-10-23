@@ -1,0 +1,12 @@
+# Arquivos que NÃO vão para o site publicado na Vercel.
+# Eles continuam no GitHub; só não ficam acessíveis pelo endereço do app.
+# (Funciona como o .gitignore: um padrão por linha.)
+
+# Documentação e guias
+*.md
+
+# Banco de dados e código da Edge Function (rodam no Supabase, não no site)
+sql
+supabase
+
+.gitignore
